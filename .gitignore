@@ -240,3 +240,4 @@ notebooks/**/*.html
 # Editors
 .vscode/
 .idea/
+runs/slurm/
