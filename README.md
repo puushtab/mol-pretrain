@@ -15,15 +15,11 @@ Project home: [Notion](https://app.notion.com/p/Project-Home-40d142bcf3408053bc0
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.11 or 3.12.
+Two environments, one repo. Follow the guide for where you are:
 
-```bash
-make setup          # core deps + dev tools (no torch)
-make setup-train    # adds chemprop/torch and analysis extras
-make hooks          # pre-commit
-cp .env.example .env
-make test
-```
+- **Laptop**: [docs/setup-local.md](docs/setup-local.md). Short version: `make setup && make hooks && make test`.
+- **MIT ORCD cluster**: [docs/setup-cluster.md](docs/setup-cluster.md). Every session starts with
+  `source slurm/session.sh`; GPUs via `./slurm/gpu-shell.sh` or `sbatch slurm/pretrain.sbatch`.
 
 ## Layout
 
@@ -38,7 +34,8 @@ data/         raw/ and processed/, gitignored (see data/README.md)
 runs/         model checkpoints and predictions, gitignored
 notebooks/    exploration (t-SNE, similarity, descriptor shifts)
 external/     vendored third-party code as pinned git submodules
-docs/         protocol.md (frozen evaluation spec), experiments.md, data_log.md
+slurm/        session.sh (per-session env), gpu-shell.sh, pretrain.sbatch
+docs/         setup guides, protocol.md (frozen evaluation spec), experiments.md, data_log.md
 ```
 
 ## Pipeline
