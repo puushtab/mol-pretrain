@@ -218,3 +218,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- project specific ---
+# Data and model outputs never go in git (see data/README.md)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+runs/*
+!runs/.gitkeep
+*.ckpt
+*.pt
+*.pth
+*.h5
+# Experiment trackers
+wandb/
+mlruns/
+lightning_logs/
+# Notebooks: keep outputs out of diffs
+notebooks/**/*.html
+# Editors
+.vscode/
+.idea/

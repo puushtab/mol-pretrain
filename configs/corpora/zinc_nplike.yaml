@@ -1,0 +1,11 @@
+# Pretraining corpus: ZINC molecules selected by natural-product-likeness (Ertl 2008).
+# Separates "coverage" (similar to downstream chemistry) from "natural-product information".
+name: zinc_nplike
+source: data/raw/zinc/zinc_sample.csv
+smiles_column: smiles
+size: 100000
+seed: 0
+filter:
+  np_likeness_min: 0.0   # threshold decided in sprint 1 after inspecting the score distribution
+exclude:
+  - data/raw/tasks/example_task.csv

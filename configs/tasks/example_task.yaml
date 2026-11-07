@@ -1,0 +1,14 @@
+# Downstream task. One file per benchmark. Pick at least one chemically close
+# and one chemically distant from COCONUT; ideally one classification, one regression.
+name: example_task
+source: data/raw/tasks/example_task.csv
+smiles_column: smiles
+target_columns: [y]
+task_type: classification      # classification | regression
+metric: auroc                  # see natural_compounds.metrics.METRICS
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4]
+# Low-label curve: number of training labels per run (null = all)
+label_counts: [50, 100, 500, null]

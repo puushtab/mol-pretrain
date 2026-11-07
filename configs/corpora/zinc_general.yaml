@@ -1,0 +1,10 @@
+# Pretraining corpus: general sample from ZINC.
+name: zinc_general
+source: data/raw/zinc/zinc_sample.csv   # raw download, see data/README.md
+smiles_column: smiles
+size: 100000                            # size-matched across corpora; set after the pilot run
+seed: 0
+# Benchmark files (with a `smiles` column) whose molecules are removed from the corpus.
+# Missing file = error, by design.
+exclude:
+  - data/raw/tasks/example_task.csv

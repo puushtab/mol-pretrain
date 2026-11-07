@@ -1,0 +1,57 @@
+[project]
+name = "natural-compounds"
+version = "0.1.0"
+description = "Does the pretraining corpus matter for molecular property prediction?"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11,<3.13"
+authors = [
+  { name = "Gabriel Dupuis" },
+  { name = "Leonard Mauvernay" },
+]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pyyaml>=6.0",
+  "rdkit>=2024.3",
+  "scikit-learn>=1.5",
+]
+
+[project.optional-dependencies]
+# Heavy training stack (torch, lightning). Install with: uv sync --extra train
+train = [
+  "chemprop>=2.2",
+]
+# Exploration only (t-SNE / UMAP / plots). Install with: uv sync --extra analysis
+analysis = [
+  "matplotlib>=3.9",
+  "umap-learn>=0.5",
+  "jupyterlab>=4.2",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.6",
+  "pre-commit>=3.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/natural_compounds"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

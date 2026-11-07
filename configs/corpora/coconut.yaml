@@ -1,0 +1,8 @@
+# Pretraining corpus: natural products from COCONUT 2.0.
+name: coconut
+source: data/raw/coconut/coconut.csv
+smiles_column: canonical_smiles
+size: 100000
+seed: 0
+exclude:
+  - data/raw/tasks/example_task.csv
