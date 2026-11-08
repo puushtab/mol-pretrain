@@ -34,17 +34,27 @@ def write_smiles_file(corpus_csv: Path, destination: Path) -> Path:
     return destination
 
 
-def write_torch_caches(descriptor_dir: Path, stem: str) -> None:
-    """Convert the standardisation vectors to the torch files the reference loads."""
+def write_torch_caches(descriptor_dir: Path, run_id: str, run_dir: Path, stem: str) -> None:
+    """Convert the standardisation vectors to the torch files the reference loads.
+
+    It builds the filenames from the stem of the path it was handed and reads
+    them from the working directory, so they go into the run directory under
+    the name that path implies. Keeping them there rather than beside the
+    descriptor stores also stops two conditions writing the same file.
+    """
     import torch
 
     for kind in ("means", "vars"):
-        source = descriptor_dir / f"{stem}_feature_{kind}.npy"
+        source = descriptor_dir / f"{run_id}_feature_{kind}.npy"
         if not source.exists():
             raise SystemExit(f"{source} is missing; run compute_descriptors.py --finalize")
-        torch.save(
-            torch.from_numpy(np.load(source)), descriptor_dir / f"feature_{kind}_cached_{stem}.pt"
-        )
+        values = np.load(source)
+        if kind == "vars" and not (np.isfinite(values).all() and (values > 0).all()):
+            raise SystemExit(
+                f"{source} holds a zero or non-finite variance, which would divide the "
+                "targets by it. Re-run compute_descriptors.py --finalize."
+            )
+        torch.save(torch.from_numpy(values), run_dir / f"feature_{kind}_cached_{stem}.pt")
 
 
 def main() -> None:
@@ -58,10 +68,14 @@ def main() -> None:
     corpus_csv = DATA_PROCESSED / "corpora" / condition.corpus_file
     descriptor_dir = DATA_PROCESSED / "descriptors"
     store = descriptor_dir / f"{condition.run_id}.zarr"
+    # compute_descriptors.py writes a group holding `descriptors` and the shard
+    # flags; the reference script calls zarr.open_array on whatever path it is
+    # given, so it gets the array inside the group, not the group.
+    array = store / "descriptors"
 
     if not corpus_csv.exists():
         raise SystemExit(f"{corpus_csv} is missing; run scripts/prepare_corpus.py")
-    if not store.exists():
+    if not array.exists():
         raise SystemExit(f"{store} is missing; run scripts/compute_descriptors.py")
     if not REFERENCE.exists():
         raise SystemExit(
@@ -74,17 +88,17 @@ def main() -> None:
     write_manifest(run_dir, **condition_dict(condition))
 
     smiles_file = write_smiles_file(corpus_csv, run_dir / f"{condition.run_id}.smi")
-    write_torch_caches(descriptor_dir, condition.run_id)
+    write_torch_caches(descriptor_dir, condition.run_id, run_dir, array.name)
 
     command = [
         sys.executable,
         str(REFERENCE.resolve()),
-        str(store.resolve()),
+        str(array.resolve()),
         str(run_dir.resolve()),
         str(smiles_file.resolve()),
     ]
     print(" ".join(command))
-    result = subprocess.run(command, cwd=descriptor_dir, check=False)
+    result = subprocess.run(command, cwd=run_dir, check=False)
     raise SystemExit(result.returncode)
 
 
