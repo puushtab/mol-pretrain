@@ -1,7 +1,8 @@
 # Stage C task plan: the size curve
 
-**Draft for validation.** Gabriel Dupuis, 8 November 2026. Follows section 6.3
-and section 8 of the revised project plan.
+**Validated 8 November 2026.** Gabriel Dupuis. Follows section 6.3 and section 8
+of the revised project plan. Work started the same day: see the execution note
+at the end.
 
 ---
 
@@ -207,3 +208,33 @@ splits, mix the two implementations, or drop the scratch baseline.
 - Both CheMeleon implementations vendored and pinned.
 - Job scripts that skip finished steps and survive preemption, for the CPU side.
 - Stage C configuration file with sizes and seeds as above.
+
+---
+
+## 9. Execution note, 8 November
+
+Started on validation. Three things changed on contact with the code.
+
+**B1 is done, and it uncovered a defect that would have broken pretraining.**
+`compute_descriptors.py --finalize` now takes `--reference`, which reuses
+another condition's standardisation vectors instead of computing its own, so
+the objective stays fixed while the corpus grows. While testing it, the
+500-molecule store turned out to carry 10 descriptors with an undefined
+variance and 117 with zero variance, on top of the 70 that are undefined
+everywhere. Dividing a target by either would have produced NaN or infinite
+targets on the first pretraining run. All three classes are now neutralised to
+mean 0 and variance 1, which passes them through untouched, and the counts are
+recorded per condition. The usable-target count this produces, 1,416 of 1,613
+at n=500, matches `docs/open-issues.md` exactly.
+
+**The pretraining job would have broken every CPU job.** It ran `uv sync
+--extra train`, which is exact and therefore uninstalls the descriptor stack
+the whole Stage A pipeline needs. The training stack now lives in its own
+environment, `.venv-train`, so a GPU job and a CPU job can never fight over one
+set of packages. The job also requests an L40S through the GRES rather than a
+node feature, which does not exist on this cluster.
+
+**Task 3 and task 4 merged** into `slurm/stage-c-prep.sbatch`: it draws all 14
+conditions, describes the 100,000-molecule reference first, freezes the vectors
+against it, then describes the other thirteen against that reference. One queue
+wait instead of two, and every step skips work already on disk.

@@ -3,6 +3,7 @@
     uv run python scripts/compute_descriptors.py data/processed/corpora/pubchem_n50000_s0.csv --nproc 8
     uv run python scripts/compute_descriptors.py <corpus.csv> --shard $SLURM_ARRAY_TASK_ID --n-shards 20
     uv run python scripts/compute_descriptors.py <corpus.csv> --finalize
+    uv run python scripts/compute_descriptors.py <corpus.csv> --finalize --reference pubchem_n100000_s0
 
 CheMeleon reports about 500 CPU-hours to describe one million molecules. The size
 curve then needs roughly 90 CPU-hours before any GPU job can start. Pure CPU
@@ -69,17 +70,38 @@ def compute(smiles: list[str], calculator: Calculator, nproc: int) -> np.ndarray
     return out
 
 
-def finalize(path: Path) -> dict:
-    """Per-feature mean and variance, which CheMeleon uses to standardise the targets."""
+def finalize(path: Path, reference: str | None = None) -> dict:
+    """Per-feature mean and variance, which CheMeleon uses to standardise the targets.
+
+    With `reference`, the vectors are copied from that condition instead of
+    computed from this one. Mordred leaves a descriptor undefined for molecules
+    it cannot handle, and which descriptors come out entirely undefined depends
+    on the sample: 70 columns at 500 molecules, 44 at 4,000. Standardising each
+    condition against itself would therefore give the larger corpora more real
+    regression targets than the smaller ones, and a rising size curve could mean
+    more data or a richer objective, with no way to tell afterwards. One
+    reference, derived once from the largest condition, keeps the objective
+    fixed while the corpus grows.
+    """
     store = zarr.open_group(store=str(path), mode="r")
     done = np.asarray(store["shard_done"][:])
     if not done.all():
         raise SystemExit(f"{int((~done).sum())} of {len(done)} shards are still missing")
 
     data = np.asarray(store["descriptors"][:])
-    all_nan = np.isnan(data).all(axis=0)
-    means = np.where(all_nan, 0.0, np.nanmean(np.where(all_nan, 0.0, data), axis=0))
-    variances = np.where(all_nan, 1.0, np.nanvar(np.where(all_nan, 0.0, data), axis=0, ddof=1))
+    defined = (~np.isnan(data)).sum(axis=0)
+    all_nan = defined == 0
+
+    if reference is None:
+        means, variances, counts = standardisation(data, defined)
+        summary_extra = counts
+    else:
+        means, variances = load_reference(path.parent, reference)
+        if len(means) != data.shape[1]:
+            raise SystemExit(
+                f"reference {reference} has {len(means)} features, this store has {data.shape[1]}"
+            )
+        summary_extra = {"usable_targets": int((variances != 1.0).sum())}
 
     np.save(path.parent / f"{path.stem}_feature_means.npy", means.astype(np.float32))
     np.save(path.parent / f"{path.stem}_feature_vars.npy", variances.astype(np.float32))
@@ -89,10 +111,55 @@ def finalize(path: Path) -> dict:
         "n_features": int(data.shape[1]),
         "features_all_nan": int(all_nan.sum()),
         "nan_fraction": float(np.isnan(data).mean()),
+        "standardised_against": reference or path.stem,
+        **summary_extra,
     }
     (path.parent / f"{path.stem}_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     write_manifest(path.parent, corpus=path.stem, **summary)
     return summary
+
+
+def standardisation(data: np.ndarray, defined: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Per-feature mean and variance, with every unusable column neutralised.
+
+    A descriptor Mordred leaves undefined everywhere, defines for exactly one
+    molecule, or returns constant cannot be a regression target: its variance is
+    undefined, undefined (one sample, ddof=1) or zero, and dividing by it gives
+    NaN or infinity. Measured on the 500-molecule PubChem condition, that is 70,
+    10 and 117 of the 1,613 Mordred descriptors. Such columns get mean 0 and
+    variance 1, which passes them through unchanged rather than poisoning the
+    loss, and the counts are recorded so the objective's real width is known.
+    """
+    usable = defined >= 2
+    means = np.zeros(data.shape[1], dtype=np.float64)
+    variances = np.ones(data.shape[1], dtype=np.float64)
+    if usable.any():
+        with np.errstate(invalid="ignore"):
+            means[usable] = np.nanmean(data[:, usable], axis=0)
+            variances[usable] = np.nanvar(data[:, usable], axis=0, ddof=1)
+
+    # Constant columns, and anything non-finite that survived, are neutralised
+    # on the same rule rather than left to divide the targets by zero.
+    degenerate = ~np.isfinite(means) | ~np.isfinite(variances) | (variances <= 0)
+    means[degenerate] = 0.0
+    variances[degenerate] = 1.0
+
+    counts = {
+        "features_single_value": int((defined == 1).sum()),
+        "features_constant": int((usable & degenerate).sum()),
+        "usable_targets": int((usable & ~degenerate).sum()),
+    }
+    return means, variances, counts
+
+
+def load_reference(directory: Path, stem: str) -> tuple[np.ndarray, np.ndarray]:
+    """The standardisation vectors of another condition, by its run id."""
+    means = directory / f"{stem}_feature_means.npy"
+    variances = directory / f"{stem}_feature_vars.npy"
+    for required in (means, variances):
+        if not required.exists():
+            raise SystemExit(f"{required} is missing; finalize {stem} first")
+    return np.load(means), np.load(variances)
 
 
 def main() -> None:
@@ -102,6 +169,12 @@ def main() -> None:
     parser.add_argument("--n-shards", type=int, default=1)
     parser.add_argument("--nproc", type=int, default=1)
     parser.add_argument("--finalize", action="store_true")
+    parser.add_argument(
+        "--reference",
+        help="run id whose standardisation vectors to reuse, e.g. pubchem_n100000_s0. "
+        "Required for every condition on a size curve, so the objective does not "
+        "grow with the corpus.",
+    )
     args = parser.parse_args()
 
     if not args.corpus_csv.exists():
@@ -109,7 +182,7 @@ def main() -> None:
     path = store_path(args.corpus_csv)
 
     if args.finalize:
-        print(json.dumps(finalize(path), indent=2))
+        print(json.dumps(finalize(path, args.reference), indent=2))
         return
 
     smiles = pd.read_csv(args.corpus_csv)["smiles"].astype(str).tolist()

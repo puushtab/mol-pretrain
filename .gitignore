@@ -248,3 +248,4 @@ runs/slurm/
 papers/*.pdf
 papers/*.html
 papers/*.txt
+.venv-train/
