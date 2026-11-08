@@ -11,11 +11,20 @@
 #
 # Every step skips work already on disk, so the job is safe to rerun after a
 # timeout or a preemption.
+#
+# Sized from measurement, not guesswork. Stage A described 500 molecules in 12
+# seconds on 8 cores, so Mordred runs at roughly 45 molecules a second counting
+# interpreter startup; all 383,000 molecules of the curve is about 2.4 CPU-hours.
+# Sixteen cores for four hours therefore carries a wide margin, and asking for
+# the 32 cores and 12 hours this used to request only bought a place behind
+# every job on a saturated partition: mit_normal estimated a start 41 hours
+# later than mit_preemptable for identical work. Preemptable is the right home
+# now that each shard flips its own flag, because a preemption costs one shard.
 #SBATCH -J nc-stage-c-prep
 #SBATCH -p mit_normal,mit_preemptable
-#SBATCH -c 32
-#SBATCH --mem=48G
-#SBATCH --time=12:00:00
+#SBATCH -c 16
+#SBATCH --mem=32G
+#SBATCH --time=04:00:00
 #SBATCH -o runs/slurm/%x-%j.out
 
 cd "$SLURM_SUBMIT_DIR"
