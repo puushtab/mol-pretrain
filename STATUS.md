@@ -161,12 +161,19 @@ his pins.
   before the first pretraining run.
 - `papers/README.md`: where every source came from, two corrections to the
   reading list, two items still missing.
+- **Stage A ran on 8 November**, 8 minutes on a CPU node, every step passed.
+  Results are in `runs/analysis/stage_a_corpora/`, and
+  `docs/check-in-1-report.md` (PDF and Word in `docs/out/`) reads them: the
+  corpora differ by up to 2.15 standard deviations on single properties,
+  COCONUT is the most redundant corpus, and PubChem already contains 73 percent
+  of BBBP and 93 percent of ESOL. Section 5 to 8 of that report say what this
+  means for the rest of the project.
 
 ## 7. What to do next, in order
 
 Every session: `cd ~/natural-compounds && source slurm/session.sh`.
 
-1. **Stage A on the cluster**: `sbatch slurm/stage-a.sbatch`. Downloads about
+1. **Stage A on the cluster** (done once, 8 November; rerun any time): `sbatch slurm/stage-a.sbatch`. Downloads about
    300 MB, samples ZINC, builds caches, runs both analyses, makes the splits,
    and computes the descriptor store for the smallest pretraining condition.
    Results land in `runs/analysis/stage_a_corpora/` and under
