@@ -90,8 +90,11 @@ def main() -> None:
     smiles_file = write_smiles_file(corpus_csv, run_dir / f"{condition.run_id}.smi")
     write_torch_caches(descriptor_dir, condition.run_id, run_dir, array.name)
 
+    # Through the wrapper, so a wall kill or a preemption costs at most the
+    # checkpoint interval. It executes the reference unchanged.
     command = [
         sys.executable,
+        str(ROOT / "scripts" / "resumable.py"),
         str(REFERENCE.resolve()),
         str(array.resolve()),
         str(run_dir.resolve()),
