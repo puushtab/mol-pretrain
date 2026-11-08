@@ -1,0 +1,21 @@
+# Stage D. At a fixed size, does composition matter?
+#
+# This is the original proposal-0 question. It runs after Stage C because Stage C
+# tells us which size is on the flat part of the curve, and comparing compositions
+# below saturation would measure size, not composition.
+#
+# Budget note: three corpora times three seeds is the single most expensive block
+# in the project. If compute is short, cut a corpus, never the seeds. Two corpora
+# with honest error bars beat three with none.
+name: stage_d_composition
+stage: D
+corpora: [zinc_general, coconut, zinc_nplike]
+sizes: [50000]               # set from the Stage C curve, not guessed
+seeds: [0, 1, 2]
+pretrain: configs/pretrain/chemeleon.yaml
+tasks: [bbbp, esol]
+# The three arms of the revised plan. pubchem is not one of them, it is the
+# reference corpus of the released checkpoint and belongs to Stages B and C.
+#
+# If compute runs short, drop zinc_nplike last. It is the arm that separates
+# coverage from information, which is the question the stage exists for.

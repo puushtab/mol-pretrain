@@ -1,0 +1,30 @@
+# CheMeleon's pretraining recipe, reproduced exactly (Burns et al. 2026).
+# Every value here is read off the reference implementation, models/chemprop_mpnn/pretrain.py.
+# Do not tune these. They are the fixed part of the experiment: if they change,
+# the released 1M checkpoint stops being a comparable point on our size curve.
+model:
+  hidden_size: 2048          # HIDDEN_SIZE
+  depth: 6                   # DEPTH
+  ffn_hidden_dim: 1024       # RegressionFFN hidden_dim
+objective:
+  kind: masked_descriptors   # MaskedDescriptorsMPNN
+  masking_ratio: 0.15
+  winsorization_factor: 6
+  descriptor_set: mordred    # ~1600 Mordred descriptors, standardised per feature
+budget:
+  batch_size: 128            # BATCH_SIZE, per device
+  max_epochs: 500            # NUM_EPOCHS
+  patience: 50               # PATIENCE, early stopping on the held-out split
+  # Epochs are a cap, not a target. Every corpus trains until the validation loss
+  # stops improving for `patience` epochs. Fixing epochs across sizes would give
+  # the 10k corpus ten times fewer gradient steps than the 100k one, which mixes
+  # corpus size with training budget. Fixing steps would make the small corpus see
+  # ten times more epochs and overfit. Convergence is the only rule fair to both.
+  # Report the epochs reached.
+  stopping: early_stopping_on_val_loss
+internal_split:
+  # Fixed in the reference implementation: random_split([0.7, 0.2, 0.1], seed 1701).
+  fractions: [0.7, 0.2, 0.1]
+  seed: 1701
+dataloader:
+  num_workers: 4             # raise on the cluster: featurization is the bottleneck

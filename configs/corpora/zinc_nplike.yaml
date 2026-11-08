@@ -1,11 +1,29 @@
-# Pretraining corpus: ZINC molecules selected by natural-product-likeness (Ertl 2008).
-# Separates "coverage" (similar to downstream chemistry) from "natural-product information".
+# ZINC molecules scoring high on natural-product-likeness (Ertl 2008).
+#
+# The arm that separates coverage from information. If a corpus that merely looks
+# like natural-product chemistry transfers as well as real natural products, the
+# gain is coverage. If it does not, natural products carry something else.
+#
+# Same molecules as zinc_general, so it reads that cache rather than building its
+# own. Only the filter differs, which is the point of the comparison.
+#
+# The top-decile threshold is our choice, not Ertl's. He proposes +1.0 as the
+# natural-product-like cutoff and warns that genuine natural products can score
+# negative. A quantile keeps the corpus reachable at any size whatever the
+# distribution does, which an absolute threshold does not.
+#
+# Measured: this decile starts at +0.143, well below Ertl's +1.0. So the arm is
+# the most natural-product-like tenth of a synthetic library, not a set Ertl
+# would call natural-product-like. Say that in the write-up rather than "NP-like
+# ZINC", which promises more than the chemistry delivers.
 name: zinc_nplike
-source: data/raw/zinc/zinc_sample.csv
+cache_from: zinc_general
+source: data/raw/zinc/zinc20_spread.csv
+format: csv
 smiles_column: smiles
-size: 100000
-seed: 0
+reference: https://huggingface.co/datasets/haydn-jones/ZINC20
+clean:
+  max_smiles_length: 150
+  drop_multifragment: true
 filter:
-  np_likeness_min: 0.0   # threshold decided in sprint 1 after inspecting the score distribution
-exclude:
-  - data/raw/tasks/example_task.csv
+  np_likeness_top_quantile: 0.1

@@ -1,0 +1,17 @@
+# MoleculeNet BBBP, blood-brain barrier penetration. 2,050 molecules.
+# Classification, and chemically far from natural products.
+#
+# Some entries are salts, for instance the first row is "[Cl].CC(C)NCC(O)COc1...".
+# We keep them as shipped. Stripping counterions would make our numbers
+# incomparable to every published BBBP result.
+name: bbbp
+source: data/raw/tasks/bbbp.csv
+smiles_column: smiles
+target_columns: [p_np]
+task_type: classification
+metric: auroc
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4]
+label_counts: [50, 100, 500, null]

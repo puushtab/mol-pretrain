@@ -1,0 +1,26 @@
+# Stage A. Do the corpora differ, and differ in a way that could matter?
+#
+# No GPU, no pretraining. Yuxin was emphatic that this comes first: "before you
+# decide on which data set to use and actually like start the large scale pre
+# training, you probably want to have a lot of analysis into the data set". If
+# the corpora turn out to be chemically indistinguishable then composition
+# cannot act through coverage, and that is a result on its own.
+#
+# The three corpora of the revised plan, plus pubchem as a fourth analytical
+# reference. PubChem is the corpus the released checkpoint was trained on, so the
+# task-to-pubchem distances computed here are exactly the x-axis Stage B needs.
+# It costs CPU only and adds no pretraining arm.
+name: stage_a_corpora
+stage: A
+corpora: [zinc_general, coconut, zinc_nplike, pubchem]
+tasks: [bbbp, esol]
+# Pairwise similarity is quadratic, so the corpora are subsampled before it.
+# 20,000 is what the plan's Mordred budget assumes for this stage.
+sizes: [20000]
+seeds: [0]
+outputs:
+  - descriptive_stats      # MW, logP, rings, TPSA, fraction sp3, per corpus
+  - scaffold_overlap       # Bemis-Murcko overlap between every pair of corpora
+  - similarity_matrix      # corpus-to-corpus nearest-neighbour Tanimoto
+  - task_distance          # each task's distance to each corpus; drives Stage B
+  - embedding              # t-SNE of corpora plus task molecules, one figure
