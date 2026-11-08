@@ -1,0 +1,6 @@
+[submodule "external/chemeleon"]
+	path = external/chemeleon
+	url = https://github.com/JacksonBurns/chemeleon
+[submodule "external/how-to-train-your-chemeleon"]
+	path = external/how-to-train-your-chemeleon
+	url = https://github.com/JacksonBurns/how-to-train-your-chemeleon

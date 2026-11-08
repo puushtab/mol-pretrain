@@ -4,29 +4,58 @@ version = "0.1.0"
 description = "Does the pretraining corpus matter for molecular property prediction?"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11,<3.13"
+# 3.12 is the overlap. chemprop 2.2.4 supports 3.11 to 3.14, polars and pyarrow
+# need 3.11 or newer, and the rdkit and mordred wheels are mature on 3.12.
+requires-python = ">=3.12,<3.13"
 authors = [
   { name = "Gabriel Dupuis" },
   { name = "Leonard Mauvernay" },
 ]
+# Pinned, not floated. A floating pin is how the lockfile silently drifted two
+# major versions away from anything CheMeleon was tested against.
 dependencies = [
-  "numpy>=1.26",
-  "pandas>=2.2",
+  "numpy>=1.26,<2",   # their install line is literally: pip install 'torch==2.6.0' 'numpy<2'
+  "pandas>=2.2,<3",
   "pyyaml>=6.0",
-  "rdkit>=2024.3",
-  "scikit-learn>=1.5",
+  "rdkit==2024.9.6",
+  "scikit-learn>=1.5,<2",
 ]
 
 [project.optional-dependencies]
-# Heavy training stack (torch, lightning). Install with: uv sync --extra train
-train = [
-  "chemprop>=2.2",
+# Descriptor computation. CPU only, no torch. What the Mordred array job on the
+# cluster installs.
+descriptors = [
+  "mordredcommunity==2.0.6",
+  "zarr>=3.0.8,<4",
+  "polars>=1.17,<3",
 ]
-# Exploration only (t-SNE / UMAP / plots). Install with: uv sync --extra analysis
+# Training stack. Versions follow how-to-train-your-chemeleon, which asks for
+# chemprop 2.2.3 or newer. That also covers `--from-foundation CheMeleon`, which
+# needs 2.2.0 or newer and is how Stage B fine-tunes the released checkpoint.
+# About 3 GB.
+train = [
+  "chemprop==2.2.4",
+  # Only the original CheMeleon pretraining script imports this, for
+  # standard_scale. Keeping it installed leaves that path open while we decide
+  # between the original and the maintained rewrite.
+  "fastprop>=1.1.1,<2",
+  # fastprop pulls pyarrow, and pyarrow 18 and newer refuse to import against
+  # numpy 1.x. We hold numpy below 2 because CheMeleon's own install line does.
+  # 17 is the last release that declares numpy>=1.16.6 and actually loads here.
+  "pyarrow>=17,<18",
+  "lightning>=2.4,<3",
+  "torch>=2.5,<3",
+  "tensorboard>=2.18,<3",
+  "mordredcommunity==2.0.6",
+  "zarr>=3.0.8,<4",
+  "polars>=1.17,<3",
+]
+# Figures and notebooks for the corpus analysis.
 analysis = [
-  "matplotlib>=3.9",
-  "umap-learn>=0.5",
-  "jupyterlab>=4.2",
+  "matplotlib>=3.8,<4",
+  "seaborn>=0.13,<0.14",
+  "umap-learn>=0.5,<0.6",
+  "jupyterlab>=4.2,<5",
 ]
 
 [dependency-groups]
@@ -47,6 +76,8 @@ packages = ["src/natural_compounds"]
 line-length = 100
 target-version = "py311"
 src = ["src", "scripts", "tests"]
+# Vendored third-party code. We read it and run it, we do not reformat it.
+extend-exclude = ["external"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
