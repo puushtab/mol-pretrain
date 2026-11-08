@@ -1,24 +1,22 @@
 # external/
 
-Third-party code we read, patch, or run but do not own. Nothing in here is imported by
-`natural_compounds`; it is vendored as **git submodules** so the exact commit is pinned.
-
-```bash
-# Add a repo (pin by commit, not branch)
-git submodule add https://github.com/JacksonBurns/chemeleon external/chemeleon
-git -C external/chemeleon checkout <commit>
-git add external/chemeleon .gitmodules
-git commit -m "Vendor chemeleon at <commit>"
-
-# After cloning the project
-git submodule update --init --recursive
-```
+Third-party code we run but do not own. Vendored as git submodules so the exact
+commit is pinned. Nothing here is imported by `natural_compounds`.
 
 | Repo | Why | Pinned commit |
 |---|---|---|
-| chemeleon | reference descriptor-pretraining recipe | TODO |
+| chemeleon | the pretraining recipe we reuse | `b5e5bd8`, 23 July 2026 |
 
-Rules:
-- Never edit a submodule in place. If a patch is needed, fork, commit there, and repoint.
-- Prefer a pip dependency when one exists (chemprop is installed via `uv sync --extra train`).
-- Pretrained checkpoints go in `runs/` or the cluster, never in git.
+After cloning the project:
+
+```bash
+git submodule update --init --recursive
+```
+
+`scripts/pretrain.py` calls `external/chemeleon/models/chemprop_mpnn/pretrain.py`
+directly. Reading that file is worth ten minutes before touching anything here.
+It takes the SMILES file with no header. It loads the standardisation vectors as
+torch files from the working directory rather than from next to the Zarr store.
+
+Never edit a submodule in place. If a patch is needed, fork it, commit there, and
+repoint. Pretrained checkpoints go in `runs/`, never in git.
