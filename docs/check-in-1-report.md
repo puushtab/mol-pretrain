@@ -114,8 +114,10 @@ Two caveats that must travel with these numbers:
   because Ertl's own score misclassifies caffeine at −1.09, and removing
   molecules on a rule that gets caffeine wrong would damage the corpus in an
   unknown direction. A documented impurity is better than an unknown one.
-- **zinc_nplike is not natural-product-like in Ertl's sense.** Its decile starts
-  at +0.14 and its mean is +0.63, below Ertl's +1.0 threshold. It is the most
+- **zinc_nplike is not natural-product-like in the sense COCONUT is.** Its
+  decile starts at +0.14 and its mean is +0.63, half COCONUT's; only 17 percent
+  of it clears +1, a conventional reference line (Ertl's paper gives no numeric
+  cutoff, only "the optimal cutoff suggested by the ROC curve"). It is the most
   natural-product-like tenth of a synthetic library. The write-ups should say
   exactly that, because the arm's name promises more than the chemistry delivers.
 
@@ -140,7 +142,23 @@ COCONUT mean from 3.93 to 3.34. Means on the 20,000-molecule samples:
 | aromatic rings | 1.79 | 1.27 | 1.35 | 0.29 |
 | fraction sp3 | 0.36 | 0.56 | 0.58 | 0.84 |
 | stereocentres | 0.93 | 3.93 | 1.64 | 3.02 |
-| rotatable bonds | 4.48 | 9.08 | 5.36 | 4.48 |
+| rotatable bonds (median) | 4.48 (4) | 9.08 (5) | 5.36 (5) | 4.48 (4) |
+| nitrogen atoms | 2.03 | 1.15 | 3.03 | 1.43 |
+| oxygen atoms | 2.68 | 5.42 | 2.47 | 1.96 |
+| aromatic atoms | 9.94 | 7.01 | 7.43 | 1.65 |
+
+Three rows deserve a word against the literature. The oxygen-rich,
+nitrogen-poor signature of natural products (Feher and Schmidt 2003: about two
+more oxygens and half the nitrogens of drugs) is the cleanest agreement in the
+table: COCONUT carries 4.3 more oxygens than nitrogens per molecule, PubChem
+0.7, and ZINC's medicinal chemistry is the only nitrogen-rich corpus. The
+rotatable-bond mean runs the other way from the expectation that natural
+products are rigid: it is carried by COCONUT's tail of fatty acids, peptides
+and polyketides, and the medians differ by one bond. And PubChem's fraction
+sp3 of 0.36 is exactly Lovering's mean for screening hits, below the 0.47 he
+reports for marketed drugs, which fits a corpus dominated by flat, aromatic,
+well-studied literature chemistry; ZINC20's make-on-demand content is built
+from saturated building blocks, so its 0.58 is expected rather than odd.
 
 ![Property distributions across the four corpora. COCONUT's long tails in molecular weight, logP and TPSA are visible, as is the pile-up of fully saturated molecules in the natural-product-like ZINC decile.](runs/analysis/stage_a_corpora/report/properties.png)
 
@@ -174,9 +192,10 @@ the bulk of the two distributions sits close together. Where COCONUT has heavy
 tails, d understates the shift of the bulk and the overlap column is the more
 robust companion.
 
-**This is the confound that matters most.** Ertl showed that a surrogate built
-only from simple properties nearly reproduces the fragment score. Our numbers
-show the same thing from the other direction: a corpus selected on
+**This is the confound that matters most.** Ertl showed that a Bayesian
+classifier built only from those simple properties separates natural products
+from synthetics almost as well as his fragment score. Our numbers show the
+same thing from the other direction: a corpus selected on
 natural-product-likeness is simultaneously a corpus selected for saturation,
 against aromaticity, and for stereochemistry. If Stage D finds a COCONUT effect,
 "natural products help" and "saturated, heavy, stereochemically rich molecules
@@ -263,8 +282,23 @@ unrelated fingerprints give 2,000 spheres, 100 analogue series of 20 give
 exactly 100, and the count does not depend on how the sample is blocked.
 
 This is the expected signature of a natural-product database: congeneric
-series, the same terpene skeleton decorated many ways, duplicate reports of the
-same compound family from different organisms.
+series, the same terpene skeleton decorated many ways, duplicate reports of
+the same compound family from different organisms. NaFM makes the biosynthetic
+case explicitly: compounds sharing a scaffold tend to come from shared
+pathways, and its whole pretraining objective is built on that structure.
+
+Two qualifications. First, the comparison is between samples drawn at very
+different rates from their parents: 20,000 COCONUT molecules are one
+thirty-fourth of the cleaned database, 20,000 PubChem molecules one
+forty-seventh of CheMeleon's file, but 20,000 ZINC molecules are one
+twenty-fifth of the 499,998 we sampled and about one seventy-thousandth of
+ZINC20 itself. Two members of one analogue series can hardly both land in a
+draw that sparse, so these numbers describe redundancy *within a draw of this
+size from each corpus as we hold it*, which is what a pretraining arm would
+see, and not the analogue structure of ZINC20 as a whole. Second, the coarse
+coverages are the externally checkable numbers: ChemFM reports a UniChem
+sphere-exclusion diversity of 0.70 and 0.38 under its two settings (Table S1.2),
+and our four corpora at 10,000 molecules span 0.37 to 0.64, the same range.
 
 **Consequence: nominal size and effective size diverge by corpus.** At a fixed
 count of molecules, COCONUT carries fewer distinct coarse regions and five
@@ -332,9 +366,15 @@ twenty textbook molecules we checked (water, methane, ethanol, acetic acid,
 benzene, toluene, phenol, glucose, urea, glycine, aspirin, caffeine, ibuprofen,
 paracetamol, nicotine, cholesterol, penicillin G, DDT, atrazine, morphine),
 nineteen are in the corpus; a uniform draw would contain 0.2 of them on
-average. Whatever the selection procedure was, the released corpus is the
-well-characterised core of PubChem, enriched roughly a hundredfold for
-compounds that appear in textbooks, assays and benchmarks. That is a property
+average. The mechanism is visible in the file itself. Ordering the corpus by
+its row number and cutting it into deciles, the first decile holds 1,260 of
+the 1,443 BBBP hits and 1,002 of the 1,041 ESOL hits; deciles seven, eight and
+ten hold no ESOL hit at all. PubChem assigns identifiers in order of
+deposition, so the oldest, most-studied compounds have the lowest numbers, and
+the released file behaves as the head of an identifier-ordered export with a
+random tail rather than as a uniform draw. Whatever the procedure was, the
+corpus is the well-characterised core of PubChem, enriched roughly a
+hundredfold for compounds that appear in textbooks, assays and benchmarks. That is a property
 of the released CheMeleon checkpoint as well, and it is the most likely reason
 its pretraining corpus sits so close to every public benchmark in section 4.2.
 
@@ -344,10 +384,11 @@ In the 20,000-molecule conditions actually used here, exact exposure falls to
 molecules within Tanimoto 0.9 of some condition molecule, are more common and
 nearly equal for the two: 3.8 and 7.3 percent of BBBP and ESOL for PubChem,
 3.5 and 7.4 percent for COCONUT, zero for ZINC. Scaled to a 50,000-molecule
-pretraining condition, about 130 PubChem structures and 85 COCONUT structures
-would be molecules the benchmarks also contain exactly, counting train,
-validation and test together; roughly a tenth of those, 14 and 8, would fall in
-a given test split. ZINC would carry none.
+pretraining condition, about 127 PubChem structures and 92 COCONUT structures
+would be molecules the benchmarks also contain exactly (scaling each cleaned
+pool's own overlap rate), counting train, validation and test together;
+roughly a tenth of those, 13 and 9, would fall in a given test split. ZINC
+would carry none.
 
 No labels leak: pretraining is unsupervised descriptor regression, and the
 property labels never enter it. But the arms would differ systematically in how
@@ -619,5 +660,15 @@ numbers.
 - Natural-product-likeness is Ertl's 2008 model as shipped in RDKit, trained on
   a 2007 snapshot of chemical space. It is the field standard and it
   misclassifies caffeine.
+- External check of the COCONUT arm. COCONUT 2.0 ships its own property
+  annotations for all 738,793 entries. Against them, our cleaned 20,000-molecule
+  sample reads: molecular weight 455 vs 509 (medians 417 vs 433), heavy atoms
+  32.4 vs 36.2, fraction sp3 0.557 vs 0.572, aromatic rings 1.27 vs 1.30,
+  H-bond donors 2.17 vs 2.90, rotatable bonds 9.08 vs 9.56, and
+  natural-product-likeness +1.09 vs +1.15 (medians +1.11 vs +1.25). Every
+  sample value sits at or slightly below the database's own, which is the
+  direction the 150-character rule predicts, since it removes the largest 8.8
+  percent of COCONUT. The likeness agreement also validates our RDKit scoring
+  against COCONUT's independent implementation.
 - No pretraining has been run. Nothing here measures model behaviour; it
   measures the data the models will see.

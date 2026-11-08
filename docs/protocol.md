@@ -54,7 +54,7 @@ Stage D is a different and worse problem. Measured over the full cached corpora,
 |---|---|---|---|---|
 | pubchem | 944,286 | 73.1% | 93.2% | 127 |
 | coconut | 738,767 | 36.1% | 55.6% | 85 |
-| zinc_general | 11,726,582 | 0.3% | 0.1% | 0 |
+| zinc_general (earlier 11.7M download; the current 499,998-row spread sample holds 0 and 0) | 11,726,582 | 0.3% | 0.1% | 0 |
 
 At matched size the three arms carry 127, 85 and zero benchmark molecules. So
 exposure is not a nuisance that covaries with the variable, it is part of what

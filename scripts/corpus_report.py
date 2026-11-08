@@ -19,10 +19,11 @@ Seven blocks, each written as a CSV under runs/analysis/<experiment>/report/:
   task_exposure       exact and near-duplicate overlap with every task
   task_proximity      per-task nearest-neighbour similarity to each corpus
 
-Why these. Ertl's own paper shows the NP-likeness score is almost reproduced by
-seven simple properties, so a composition arm selected on that score is
-confounded with those properties unless they are measured (properties,
-property_effects). ChemFM attributes ZINC's weakness to redundant analogue
+Why these. Ertl's own paper shows that a Bayesian classifier built from seven
+simple properties separates natural products from synthetics almost as well as
+his fragment score (Ertl et al. 2008, p. 4), so a composition arm selected on
+that score is also an arm selected on those properties, and the size of that
+confound has to be measured (property_effects). ChemFM reports a sphere-exclusion diversity for UniChem only and attributes ZINC's weakness to redundant analogue
 series but never measures it; sphere-exclusion decay does (diversity). Hu et al.
 removed downstream test molecules from the pretraining corpus; we measure what
 is there instead (task_exposure). Stage E needs a per-molecule distance from
@@ -76,7 +77,7 @@ def _rdkit():
 
 
 def properties(smiles: list[str]) -> pd.DataFrame:
-    """Thirteen descriptors per molecule. The seven Ertl used are all here."""
+    """Sixteen descriptors per molecule, the seven Ertl used among them."""
     Chem, Descriptors, Crippen, rdMolDescriptors = _rdkit()
     rows = []
     for s in smiles:
@@ -95,7 +96,13 @@ def properties(smiles: list[str]) -> pd.DataFrame:
                 "rotatable_bonds": rdMolDescriptors.CalcNumRotatableBonds(mol),
                 "hbd": rdMolDescriptors.CalcNumHBD(mol),
                 "hba": rdMolDescriptors.CalcNumHBA(mol),
+                # Ertl's surrogate uses N+O together; the literature's natural-
+                # product signature is the split, oxygen-rich and nitrogen-poor,
+                # so both forms are kept.
                 "n_plus_o": sum(a.GetSymbol() in ("N", "O") for a in mol.GetAtoms()),
+                "n_count": sum(a.GetSymbol() == "N" for a in mol.GetAtoms()),
+                "o_count": sum(a.GetSymbol() == "O" for a in mol.GetAtoms()),
+                "aromatic_atoms": sum(a.GetIsAromatic() for a in mol.GetAtoms()),
                 "stereocentres": len(
                     Chem.FindMolChiralCenters(
                         mol, includeUnassigned=True, useLegacyImplementation=False
@@ -234,14 +241,14 @@ def _sphere_exclusion(fingerprints: np.ndarray, threshold: float) -> int:
     """Greedy sphere exclusion. Returns how many spheres the sample needs.
 
     Two molecules share a sphere when their Morgan Tanimoto similarity is at
-    least `threshold` (0.65 here, so distance at most 0.35). Divided by the
-    sample size this is a sphere-exclusion diversity in the sense of ChemFM's
-    SEDiv, but ChemFM (via MolScore) uses a Tanimoto *distance* threshold of
-    0.65, a far looser sphere, so the two numbers are not comparable. What we
-    use is the decay between two sample sizes within this study: a library of
-    analogue series fills few new spheres as it grows, a diverse one keeps
-    filling them. Validated on synthetic data: 10,000 unrelated molecules give
-    10,000 spheres; 200 seeds with 50 analogues each give exactly 200.
+    least `threshold`. Divided by the sample size this is a sphere-exclusion
+    diversity. ChemFM's SEDiv (via MolScore) uses a Tanimoto *distance*
+    threshold of 0.65, which is the similarity-0.35 column written by
+    diversity_table and the one comparable to published values; the
+    similarity-0.65 column counts close analogues instead. Tested in
+    tests/test_corpus_report.py: 2,000 unrelated fingerprints give 2,000
+    spheres, 100 analogue series of 20 give exactly 100, and the count does
+    not depend on block boundaries.
     """
     block = 512
     kept: np.ndarray | None = None

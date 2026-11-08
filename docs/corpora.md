@@ -34,7 +34,7 @@ two general libraries is about two units. So the contrast Stage D needs is real.
 ## COCONUT is heterogeneous, and no cheap filter fixes it
 
 23.0 percent of COCONUT scores below zero on its own NP-likeness column, and 44.9
-percent falls below Ertl's +1.0 cutoff for calling something natural-product-like.
+percent falls below +1.0, a conventional reference line (Ertl's paper names no numeric cutoff).
 Spot checks confirm genuinely synthetic molecules are present: losartan,
 clonidine and thiopental are all in the database.
 
@@ -64,7 +64,7 @@ reader.
 ## zinc_nplike is not "natural-product-like" in Ertl's sense
 
 The arm takes the top decile of zinc_general by NP-likeness. Measured, that
-decile starts at +0.143, well below Ertl's +1.0. So it is the most
+decile starts at +0.143, well below the +1.0 reference line. So it is the most
 natural-product-like tenth of a synthetic library, not a set of molecules Ertl
 would call natural-product-like.
 

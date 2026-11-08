@@ -6,5 +6,5 @@ source: data/raw/pubchem/cleaned_pubchem_1MM.smiles
 format: smiles_list          # one SMILES per line, no header
 smiles_column: null
 # Zenodo record 15733575, file cleaned_pubchem_1MM.smiles (43.9 MB).
-# Already cleaned upstream: no salts, no SMILES over 150 characters, RDKit-parsable.
+# Effectively clean upstream: no salts, three SMILES over 150 characters, all RDKit-parsable.
 reference: https://zenodo.org/records/15733575
