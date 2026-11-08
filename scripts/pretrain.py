@@ -1,48 +1,91 @@
-"""Pretrain a Chemprop model on one corpus with the fixed recipe.
+"""Pretrain one condition with CheMeleon's recipe.
 
-Usage:
-    uv run python scripts/pretrain.py configs/pretrain/default.yaml data/processed/corpora/coconut.csv
+    uv run python scripts/pretrain.py pubchem 50000 0
 
-Requires the `train` extra (uv sync --extra train).
+The training loop is CheMeleon's, vendored under external/chemeleon rather than
+reimplemented, because the experiment only means something if our recipe is
+theirs. This script prepares the three inputs their script expects and calls it.
 
-TODO(sprint 2): wire in the CheMeleon descriptor-prediction objective. The reference
-implementation lives in the chemeleon repo (see external/README.md). Until then this
-script only validates inputs and writes the run directory so the layout is settled.
+Two quirks of their script. It reads the SMILES file with readlines(), which
+means no header. And it loads the standardisation vectors as torch files from
+the working directory. We launch it from the directory holding them.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import shutil
-from datetime import datetime
+import subprocess
+import sys
 from pathlib import Path
 
-from natural_compounds.config import load_config
-from natural_compounds.paths import RUNS, ensure_dirs
+import numpy as np
+
+from natural_compounds.experiments import Condition, condition_dict
+from natural_compounds.manifest import write_manifest
+from natural_compounds.paths import DATA_PROCESSED, ROOT, RUNS
+
+REFERENCE = ROOT / "external" / "chemeleon" / "models" / "chemprop_mpnn" / "pretrain.py"
+
+
+def write_smiles_file(corpus_csv: Path, destination: Path) -> Path:
+    """One SMILES per line, no header, matching what the reference script reads."""
+    lines = corpus_csv.read_text().splitlines()[1:]
+    destination.write_text("\n".join(lines) + "\n")
+    return destination
+
+
+def write_torch_caches(descriptor_dir: Path, stem: str) -> None:
+    """Convert the standardisation vectors to the torch files the reference loads."""
+    import torch
+
+    for kind in ("means", "vars"):
+        source = descriptor_dir / f"{stem}_feature_{kind}.npy"
+        if not source.exists():
+            raise SystemExit(f"{source} is missing; run compute_descriptors.py --finalize")
+        torch.save(
+            torch.from_numpy(np.load(source)), descriptor_dir / f"feature_{kind}_cached_{stem}.pt"
+        )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("config", type=Path)
-    parser.add_argument("corpus_csv", type=Path)
-    parser.add_argument("--name", help="run name; defaults to <corpus>_<timestamp>")
+    parser.add_argument("corpus")
+    parser.add_argument("size", type=int)
+    parser.add_argument("seed", type=int)
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
-    ensure_dirs()
-    if not args.corpus_csv.exists():
-        raise SystemExit(f"corpus not found: {args.corpus_csv}")
+    condition = Condition(args.corpus, args.size, args.seed)
+    corpus_csv = DATA_PROCESSED / "corpora" / condition.corpus_file
+    descriptor_dir = DATA_PROCESSED / "descriptors"
+    store = descriptor_dir / f"{condition.run_id}.zarr"
 
-    name = args.name or f"{args.corpus_csv.stem}_{datetime.now():%Y%m%d-%H%M%S}"
-    run_dir = RUNS / "pretrain" / name
-    run_dir.mkdir(parents=True)
-    shutil.copy(args.config, run_dir / "config.yaml")
-    (run_dir / "meta.json").write_text(
-        json.dumps({"corpus": str(args.corpus_csv), "seed": cfg.get("seed", 0)}, indent=2)
-    )
-    print(f"run directory: {run_dir}")
-    raise NotImplementedError("pretraining loop not implemented yet; see docstring")
+    if not corpus_csv.exists():
+        raise SystemExit(f"{corpus_csv} is missing; run scripts/prepare_corpus.py")
+    if not store.exists():
+        raise SystemExit(f"{store} is missing; run scripts/compute_descriptors.py")
+    if not REFERENCE.exists():
+        raise SystemExit(
+            f"{REFERENCE} is missing. Vendor the reference implementation:\n"
+            "  git submodule update --init --recursive"
+        )
+
+    run_dir = RUNS / "pretrain" / condition.run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_manifest(run_dir, **condition_dict(condition))
+
+    smiles_file = write_smiles_file(corpus_csv, run_dir / f"{condition.run_id}.smi")
+    write_torch_caches(descriptor_dir, condition.run_id)
+
+    command = [
+        sys.executable,
+        str(REFERENCE.resolve()),
+        str(store.resolve()),
+        str(run_dir.resolve()),
+        str(smiles_file.resolve()),
+    ]
+    print(" ".join(command))
+    result = subprocess.run(command, cwd=descriptor_dir, check=False)
+    raise SystemExit(result.returncode)
 
 
 if __name__ == "__main__":
