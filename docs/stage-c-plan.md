@@ -284,8 +284,65 @@ Three consequences.
   losing only the work since its last completed descriptor shard. For a
   16-hour pretraining run that behaviour would be ruinous without
   checkpointing, which is the argument for B3 made from measurement rather
-  than from caution. CPU work now goes to `mit_normal`.
+  than from caution.
 
-Cost per condition on disk: 287 MB of Lightning checkpoints plus a 50 MB
-exported model, so about 4.7 GB for the full curve. Peak memory 3.1 GB against
-the 64 GB requested, which should come down.
+Cost per condition on disk, corrected after B3 landed: three checkpoints of
+143 MB rather than two, because the wrapper's `last.ckpt` sits alongside the
+recipe's own two best-by-val_loss files, plus a 50 MB exported model. That is
+478 MB a condition and 6.7 GB for the full curve, against 4.7 GB before.
+Home holds 15.6 GB of a 200 GB quota, so the margin is not in question.
+Peak memory 3.1 GB against the 64 GB requested, which should come down.
+
+## 11. Blockers B1 and B3 cleared, 8 November
+
+**B1, the frozen descriptor objective.** `compute_descriptors.py --finalize`
+now takes `--reference`, so the thirteen smaller conditions standardise
+against `pubchem_n100000_s0` instead of against themselves. Without it the
+curve would have confounded corpus size with the width of the regression
+objective, since which Mordred descriptors come out defined depends on the
+sample. Measured on the 500-molecule condition, 70 of the 1,613 descriptors are
+undefined everywhere, 10 are defined for exactly one molecule and 117 are
+constant; the first two give an undefined variance and the third gives zero, so
+dividing targets by them yields NaN or infinity. Those columns are neutralised
+to mean 0 and variance 1, which passes them through untouched, and the counts
+are recorded so the objective's real width — 1,416 usable targets — is known
+rather than assumed.
+
+**B3, resumption.** Verified end to end rather than argued for. Job 28371249
+ran the pilot with a three-minute wall and a 30-second checkpoint interval and
+was killed by Slurm at epoch 107, leaving `last.ckpt` beside the recipe's own
+two checkpoints — which is the practical confirmation that patching
+`Trainer.__init__` appends to the recipe's callback list rather than replacing
+it. Job 28372537 then resubmitted the same condition with no override and
+logged `resuming from .../last.ckpt`, with its first epoch numbered 107 and not
+0. The epoch number is the whole test: a run that resumed but silently
+restarted from zero would be indistinguishable by wall-clock on a
+500-molecule condition and would quietly cost sixteen hours on a
+100,000-molecule one.
+
+The interval is a timer rather than an epoch count for two reasons. Lightning
+treats the two as mutually exclusive, and an epoch is the wrong unit across a
+size curve: one epoch of the 500-molecule condition takes about a second, which
+would write 143 MB to shared storage every second, while one epoch of the
+100,000-molecule condition takes roughly three minutes. A fixed interval bounds
+both the work at risk and the write rate at every point on the curve.
+`NC_CHECKPOINT_MINUTES` overrides the 15-minute default, which is the only
+reason the kill test could run inside three minutes.
+
+What resumption restores is the optimiser, the scheduler, the epoch counter and
+the early-stopping state, so a resumed run follows the trajectory of an
+uninterrupted one. What it does not restore is the dataloader's shuffle
+position inside the interrupted epoch, so that epoch replays from its start. At
+a 15-minute interval that is a fraction of one epoch on any condition here.
+
+**Scheduling, revised on measurement.** The preparation job asked for 32 cores
+and 12 hours and was scheduled for 9 November at 18:00. The scheduler estimated
+10 November at 14:07 for that shape on `mit_normal` — and the same estimate for
+every smaller shape, down to 4 cores and 2 hours, so the request shape was not
+the lever. `mit_preemptable` estimated the same evening at 21:10 with 8 idle
+nodes. Preemption was the reason that partition was abandoned and is no longer
+an argument against it: each descriptor shard flips its own flag, so being
+killed costs one shard of at most 10,000 molecules, about four minutes. The job
+now asks for 16 cores and 4 hours across both partitions with `--requeue`,
+sized from the Stage A rate of roughly 45 molecules a second on 8 cores, which
+puts the whole 383,000-molecule curve near 2.4 CPU-hours.
