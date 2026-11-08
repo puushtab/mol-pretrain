@@ -27,12 +27,16 @@ epoch on any condition in the size curve.
 
 from __future__ import annotations
 
+import os
 import runpy
 import sys
 from datetime import timedelta
 from pathlib import Path
 
-CHECKPOINT_EVERY = timedelta(minutes=15)
+# Fifteen minutes bounds the loss on a sixteen-hour run to a percent of it.
+# NC_CHECKPOINT_MINUTES overrides it, which is how the resume path gets tested
+# inside a three-minute job rather than only on the runs that need it.
+CHECKPOINT_EVERY = timedelta(minutes=float(os.environ.get("NC_CHECKPOINT_MINUTES", "15")))
 
 
 def install(output_dir: Path, interval: timedelta = CHECKPOINT_EVERY) -> Path:

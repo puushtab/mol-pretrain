@@ -67,3 +67,13 @@ def test_an_explicit_checkpoint_path_is_not_overridden(tmp_path, restore_trainer
     last.write_bytes(b"")
     pl.Trainer.fit(object(), None, ckpt_path="/elsewhere.ckpt")
     assert seen["ckpt_path"] == "/elsewhere.ckpt"
+
+
+def test_the_interval_can_be_overridden_for_testing(monkeypatch):
+    monkeypatch.setenv("NC_CHECKPOINT_MINUTES", "0.5")
+    spec = importlib.util.spec_from_file_location(
+        "resumable_reloaded", Path(__file__).resolve().parents[1] / "scripts" / "resumable.py"
+    )
+    reloaded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reloaded)
+    assert reloaded.CHECKPOINT_EVERY == timedelta(seconds=30)
