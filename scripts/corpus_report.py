@@ -39,6 +39,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import mannwhitneyu
 
 from natural_compounds.chem import (
     canonicalize,
@@ -54,10 +55,14 @@ from natural_compounds.paths import CONFIGS, DATA_PROCESSED, RUNS, resolve_sourc
 
 # Quadratic blocks run on a subsample. 4,000 keeps a similarity matrix at
 # 16 million floats, which is seconds, and the quantiles are stable well below
-# that. Sphere exclusion gets two sizes because the decay is the measurement.
+# that. Sphere exclusion gets two nested sizes and two radii; see diversity_table.
 SIMILARITY_SAMPLE = 4000
 SPHERE_SAMPLES = (2000, 10000)
-SPHERE_THRESHOLD = 0.65
+# Two spheres. Similarity 0.65 (distance 0.35) catches close analogues, the
+# scale at which analogue series and re-reported compounds live. Similarity
+# 0.35 (distance 0.65) is the sphere ChemFM's SEDiv uses via MolScore and
+# measures how fast a corpus fills chemical space at a coarse scale.
+SPHERE_THRESHOLDS = (0.65, 0.35)
 NEAR_DUPLICATE = 0.9
 SEED = 0
 
@@ -154,6 +159,13 @@ def property_effects(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
                 pooled = math.sqrt(
                     ((len(x) - 1) * sx**2 + (len(y) - 1) * sy**2) / (len(x) + len(y) - 2)
                 )
+                # Cohen's d assumes comparable spreads. COCONUT's variances are
+                # up to thirty times another corpus's on the same property, so a
+                # rank-based companion goes next to it: the probability that a
+                # random molecule of A exceeds a random molecule of B (ties count
+                # half), from the Mann-Whitney U statistic. 0.5 means no shift.
+                u_stat = mannwhitneyu(x, y, alternative="two-sided").statistic
+                superiority = float(u_stat / (len(x) * len(y)))
                 rows.append(
                     {
                         "property": column,
@@ -161,8 +173,12 @@ def property_effects(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
                         "corpus_b": b,
                         "mean_a": x.mean(),
                         "mean_b": y.mean(),
+                        "median_a": float(np.median(x)),
+                        "median_b": float(np.median(y)),
                         "difference": x.mean() - y.mean(),
                         "cohens_d": (x.mean() - y.mean()) / pooled if pooled else float("nan"),
+                        "prob_superiority": superiority,
+                        "cliffs_delta": 2 * superiority - 1,
                         "overlap": _overlap_coefficient(x, y),
                     }
                 )
@@ -203,7 +219,11 @@ def scaffold_table(corpora: dict[str, list[str]]) -> pd.DataFrame:
                 if len(counts) > 1
                 else float("nan"),
                 "top100_share": float(share[:100].sum()),
-                "singleton_scaffold_share": float((frequencies == 1).sum() / len(counts)),
+                # Two denominators, because "81 percent singletons" reads as a
+                # share of molecules and is not: it is the share of scaffolds
+                # that occur once. The molecule-weighted version is lower.
+                "singleton_share_of_scaffolds": float((frequencies == 1).sum() / len(counts)),
+                "singleton_share_of_molecules": float((frequencies == 1).sum() / total),
                 "empty_scaffold_share": acyclic / len(resolved),
             }
         )
@@ -250,6 +270,15 @@ def _sphere_exclusion(fingerprints: np.ndarray, threshold: float) -> int:
 
 
 def diversity_table(corpora: dict[str, list[str]], rng: np.random.Generator) -> pd.DataFrame:
+    """Pairwise similarity on a 4,000-molecule sample, sphere coverage on nested samples.
+
+    Coverage is spheres divided by sample size. The 2,000-molecule sample is the
+    first 2,000 rows of the 10,000-molecule one, so the change between them is a
+    within-sample quantity and not two independent draws. Coverage saturates at
+    1.0 for a corpus with no close pairs, and a decay measured against a
+    saturated value is a count of a handful of molecules; report the absolute
+    coverages and compare corpora on those.
+    """
     rows = []
     for corpus, smiles in corpora.items():
         index = rng.choice(len(smiles), size=min(SIMILARITY_SAMPLE, len(smiles)), replace=False)
@@ -262,18 +291,21 @@ def diversity_table(corpora: dict[str, list[str]], rng: np.random.Generator) -> 
             "internal_diversity": float(1 - upper.mean()),
             "p95_pairwise_tanimoto": float(np.quantile(upper, 0.95)),
             "pairs_over_0.4": float((upper > 0.4).mean()),
+            "pairs_over_0.65": float((upper > 0.65).mean()),
         }
-        for size in SPHERE_SAMPLES:
-            if size > len(smiles):
-                row[f"sphere_diversity_{size}"] = float("nan")
-                continue
-            sample = rng.choice(len(smiles), size=size, replace=False)
-            sample_fps, _ = fingerprint_matrix([smiles[i] for i in sample])
-            row[f"sphere_diversity_{size}"] = _sphere_exclusion(sample_fps, SPHERE_THRESHOLD) / size
         small, large = SPHERE_SAMPLES
-        if not math.isnan(row.get(f"sphere_diversity_{large}", float("nan"))):
-            row["sphere_decay"] = (
-                row[f"sphere_diversity_{small}"] - row[f"sphere_diversity_{large}"]
+        if large > len(smiles):
+            rows.append(row)
+            continue
+        sample = rng.choice(len(smiles), size=large, replace=False)
+        sample_fps, _ = fingerprint_matrix([smiles[i] for i in sample])
+        for threshold in SPHERE_THRESHOLDS:
+            tag = f"sim{threshold:.2f}"
+            for size in (small, large):
+                spheres = _sphere_exclusion(sample_fps[:size], threshold)
+                row[f"sphere_coverage_{tag}_n{size}"] = spheres / size
+            row[f"sphere_decay_{tag}"] = (
+                row[f"sphere_coverage_{tag}_n{small}"] - row[f"sphere_coverage_{tag}_n{large}"]
             )
         rows.append(row)
     return pd.DataFrame(rows)
@@ -285,7 +317,10 @@ def nearest_neighbour_table(
     """For each ordered pair, how close the nearest molecule of B is to A.
 
     Directional on purpose. COCONUT may sit inside ZINC's coverage without ZINC
-    sitting inside COCONUT's.
+    sitting inside COCONUT's. Both sides are 4,000-molecule samples: nearest-
+    neighbour similarity rises with the size of the reference set, so the table
+    is comparable across its own rows and not with numbers computed against a
+    whole corpus. The task tables use the whole condition as reference instead.
     """
     samples = {}
     for corpus, smiles in corpora.items():
@@ -314,20 +349,22 @@ def nearest_neighbour_table(
 
 
 def task_tables(
-    corpora: dict[str, list[str]], tasks: dict[str, list[str]], rng: np.random.Generator
+    corpora: dict[str, list[str]], tasks: dict[str, list[str]]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Exposure counts, and each task molecule's distance to each corpus.
 
-    Exposure is counted two ways. Exact canonical SMILES is a lower bound, since
-    a benchmark molecule stored as a salt will not match its parent. Tanimoto at
-    0.9 catches those and the close analogues, which is what pretraining would
-    actually have seen.
+    The reference is the whole condition, 20,000 molecules here, because that
+    is what a pretraining run at this size would see; a subsample would
+    understate proximity and near-duplicates together. Exposure is counted two
+    ways. Exact canonical SMILES is a lower bound, since a benchmark molecule
+    stored as a salt will not match its parent. Tanimoto at 0.9 catches those
+    and the close analogues.
+
+    Denominators are stated in the table. The raw task files hold duplicate
+    rows and SMILES RDKit cannot parse; exact matches are over unique canonical
+    structures and similarity statistics over parseable rows.
     """
     exposure, proximity = [], []
-    samples = {}
-    for corpus, smiles in corpora.items():
-        index = rng.choice(len(smiles), size=min(SIMILARITY_SAMPLE, len(smiles)), replace=False)
-        samples[corpus] = [smiles[i] for i in index]
 
     # The corpora were canonicalised when their cache was built; the task CSVs
     # carry whatever SMILES their authors wrote. Comparing the two as strings
@@ -338,23 +375,22 @@ def task_tables(
     }
 
     for task, task_smiles in tasks.items():
+        unique = len(canonical_tasks[task])
         for corpus, smiles in corpora.items():
-            # Exact matches are counted over unique canonical structures, so
-            # the share has to use that same denominator: the raw file holds
-            # duplicate rows and SMILES RDKit cannot parse.
-            unique = len(canonical_tasks[task])
             exact = len(canonical_tasks[task] & set(smiles))
-            best = max_tanimoto_to_reference(task_smiles, samples[corpus])
+            best = max_tanimoto_to_reference(task_smiles, smiles)
             finite = best[np.isfinite(best)]
             exposure.append(
                 {
                     "task": task,
                     "corpus": corpus,
+                    "reference_size": len(smiles),
                     "task_rows": len(task_smiles),
+                    "task_parseable": int(len(finite)),
                     "task_unique_structures": unique,
                     "exact_matches": exact,
                     "exact_share": exact / unique,
-                    "near_duplicates_in_sample": int((finite >= NEAR_DUPLICATE).sum()),
+                    "near_duplicates": int((finite >= NEAR_DUPLICATE).sum()),
                     "near_duplicate_share": float((finite >= NEAR_DUPLICATE).mean()),
                 }
             )
@@ -362,14 +398,60 @@ def task_tables(
                 {
                     "task": task,
                     "corpus": corpus,
+                    "reference_size": len(smiles),
+                    "task_parseable": int(len(finite)),
                     "mean_nn_similarity": float(finite.mean()),
                     "median_nn_similarity": float(np.quantile(finite, 0.5)),
                     "q10_nn_similarity": float(np.quantile(finite, 0.1)),
                     "q90_nn_similarity": float(np.quantile(finite, 0.9)),
                     "share_under_0.3": float((finite < 0.3).mean()),
+                    "share_over_0.4": float((finite > 0.4).mean()),
                 }
             )
     return pd.DataFrame(exposure), pd.DataFrame(proximity)
+
+
+def full_corpus_exposure(corpus_names: list[str], tasks: dict[str, list[str]]) -> pd.DataFrame:
+    """Exact-structure exposure against each *whole* cached corpus.
+
+    The condition tables above answer "how many benchmark structures does a
+    20,000-molecule pretraining set contain". This answers "how much of the
+    benchmark is in the corpus at all", which is what the released CheMeleon
+    checkpoint, trained on the whole PubChem file, actually saw. A derived
+    corpus such as zinc_nplike reads its parent's cache and is reported under
+    the parent, before its filter.
+    """
+    from natural_compounds.cache import cache_path
+
+    canonical_tasks = {
+        task: {c for c in (canonicalize(s) for s in smiles) if c} for task, smiles in tasks.items()
+    }
+    rows = []
+    seen = set()
+    for name in corpus_names:
+        cfg = load_config(CONFIGS / "corpora" / f"{name}.yaml")
+        cache = cfg.get("cache_from", name)
+        if cache in seen:
+            continue
+        seen.add(cache)
+        path = cache_path(cache)
+        if not path.exists():
+            print(f"  no cache for {cache}, skipping full-corpus exposure")
+            continue
+        pool = set(pd.read_parquet(path, columns=["smiles"])["smiles"].tolist())
+        for task, structures in canonical_tasks.items():
+            hit = len(structures & pool)
+            rows.append(
+                {
+                    "corpus": cache,
+                    "pool_size": len(pool),
+                    "task": task,
+                    "task_unique_structures": len(structures),
+                    "exact_matches": hit,
+                    "exact_share": hit / len(structures),
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def figures(
@@ -421,7 +503,11 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.experiment)
-    rng = np.random.default_rng(args.seed)
+    # One generator per table, so adding a draw to one table never moves the
+    # numbers in another.
+    generators = {
+        k: np.random.default_rng([args.seed, i]) for i, k in enumerate(("diversity", "neighbours"))
+    }
 
     corpora: dict[str, list[str]] = {}
     for condition in expand_conditions(cfg):
@@ -458,16 +544,22 @@ def main() -> None:
     scaffold_table(corpora).to_csv(out_dir / "scaffolds.csv", index=False)
 
     print("  diversity")
-    diversity_table(corpora, rng).to_csv(out_dir / "diversity.csv", index=False)
+    diversity_table(corpora, generators["diversity"]).to_csv(out_dir / "diversity.csv", index=False)
 
     print("  nearest neighbours")
-    nearest_neighbour_table(corpora, rng).to_csv(out_dir / "nearest_neighbour.csv", index=False)
+    nearest_neighbour_table(corpora, generators["neighbours"]).to_csv(
+        out_dir / "nearest_neighbour.csv", index=False
+    )
 
     if tasks:
         print("  task exposure and proximity")
-        exposure, proximity = task_tables(corpora, tasks, rng)
+        exposure, proximity = task_tables(corpora, tasks)
         exposure.to_csv(out_dir / "task_exposure.csv", index=False)
         proximity.to_csv(out_dir / "task_proximity.csv", index=False)
+        print("  full-corpus exposure")
+        full_corpus_exposure(list(corpora), tasks).to_csv(
+            out_dir / "full_corpus_exposure.csv", index=False
+        )
 
     print("  figures")
     written = figures(frames, corpora, out_dir)
@@ -478,7 +570,7 @@ def main() -> None:
         "tasks": {name: len(smiles) for name, smiles in tasks.items()},
         "similarity_sample": SIMILARITY_SAMPLE,
         "sphere_samples": list(SPHERE_SAMPLES),
-        "sphere_threshold": SPHERE_THRESHOLD,
+        "sphere_thresholds": list(SPHERE_THRESHOLDS),
         "near_duplicate_threshold": NEAR_DUPLICATE,
         "seed": args.seed,
         "figures": written,
