@@ -12,7 +12,7 @@
 # beside the venv on $HOME so uv hardlinks instead of copying across
 # filesystems. See docs/setup-cluster.md.
 #SBATCH -J nc-stage-a
-#SBATCH -p mit_normal
+#SBATCH -p mit_normal,mit_preemptable
 #SBATCH -c 8
 #SBATCH --mem=32G
 #SBATCH --time=04:00:00

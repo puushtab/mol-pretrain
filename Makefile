@@ -8,7 +8,7 @@ setup:
 setup-train:
 	uv sync --all-groups --extra descriptors --extra train
 
-# Fetch PubChem, COCONUT, the benchmarks and the weights. About 800 MB.
+# Fetch PubChem, COCONUT, the benchmarks and the weights. About 300 MB to download.
 data:
 	uv run python scripts/download_data.py
 

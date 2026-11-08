@@ -28,7 +28,7 @@ The laptop does not need `train`. Pretraining happens on the cluster.
 ## Data
 
 ```bash
-uv run python scripts/download_data.py          # about 2.3 GB
+uv run python scripts/download_data.py          # about 300 MB, parallel byte ranges
 uv run python scripts/download_data.py --verify # digests only, downloads nothing
 ```
 

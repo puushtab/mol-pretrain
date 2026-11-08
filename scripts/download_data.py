@@ -4,8 +4,11 @@
     uv run python scripts/download_data.py --only pubchem coconut
     uv run python scripts/download_data.py --verify   # check what is already here
 
-Downloads about 800 MB. Safe to interrupt and rerun, a file already present with
-the right digest is skipped.
+Downloads about 300 MB. Safe to interrupt and rerun: a file already present with
+the right digest is skipped, and a file left short by an interrupted run is
+fetched again. Each file comes down as several parallel byte ranges, because
+Zenodo and the COCONUT bucket serve a single connection at about 100 KB/s from
+the cluster while the pipe itself carries far more.
 
 ZINC is not here. It is drawn by scripts/sample_zinc.py, which reads scattered
 parquet row groups rather than whole shards, because whole shards are blocked by
@@ -22,6 +25,7 @@ import argparse
 import hashlib
 import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from natural_compounds.paths import DATA_RAW, ROOT
@@ -71,15 +75,76 @@ def digest(path: Path) -> str:
     return sha.hexdigest()[:16]
 
 
+CONNECTIONS = 8
+ATTEMPTS = 12
+
+
+def ranges(size: int, parts: int) -> list[tuple[int, int]]:
+    """Split [0, size) into at most `parts` contiguous inclusive byte ranges."""
+    chunk = max(1, -(-size // parts))
+    return [(start, min(start + chunk, size) - 1) for start in range(0, size, chunk)]
+
+
+def remote_size(url: str) -> int | None:
+    request = urllib.request.Request(url, method="HEAD")
+    with urllib.request.urlopen(request, timeout=60) as response:
+        length = response.headers.get("Content-Length")
+        ranged = response.headers.get("Accept-Ranges", "").lower() == "bytes"
+    return int(length) if length and ranged else None
+
+
+def _fetch_range(url: str, span: tuple[int, int], part: Path) -> None:
+    """Fetch one byte range into `part`, resuming from whatever is already there."""
+    want = span[1] - span[0] + 1
+    for _ in range(ATTEMPTS):
+        have = part.stat().st_size if part.exists() else 0
+        if have >= want:
+            return
+        request = urllib.request.Request(
+            url, headers={"Range": f"bytes={span[0] + have}-{span[1]}"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response, part.open("ab") as out:
+                while block := response.read(1 << 20):
+                    out.write(block)
+        except OSError:
+            continue
+    if not (part.exists() and part.stat().st_size == want):
+        raise OSError(f"range {span} of {url} incomplete after {ATTEMPTS} attempts")
+
+
+def download(url: str, target: Path) -> None:
+    """Fetch `url` to `target`, as parallel byte ranges when the server allows."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    size = remote_size(url)
+    if size is None:
+        urllib.request.urlretrieve(url, target)
+        return
+    spans = ranges(size, CONNECTIONS)
+    parts = [target.with_name(f"{target.name}.part{i}") for i in range(len(spans))]
+    with ThreadPoolExecutor(max_workers=len(spans)) as pool:
+        list(pool.map(lambda job: _fetch_range(url, *job), zip(spans, parts, strict=True)))
+    with target.open("wb") as out:
+        for part in parts:
+            out.write(part.read_bytes())
+            part.unlink()
+    if target.stat().st_size != size:
+        raise OSError(f"{target} is {target.stat().st_size} bytes, server said {size}")
+
+
 def fetch(url: str, target: Path, expected: str) -> str:
     if target.exists():
         found = digest(target)
         if found == expected:
             return "already here"
-        return f"PRESENT BUT DIGEST DIFFERS, got {found}, expected {expected}"
+        size = remote_size(url)
+        if size is not None and target.stat().st_size == size:
+            return (
+                f"PRESENT BUT DIGEST DIFFERS, got {found}, expected {expected} (upstream changed?)"
+            )
+        target.unlink()  # short file from an interrupted run
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    urllib.request.urlretrieve(url, target)
+    download(url, target)
     found = digest(target)
     return "downloaded" if found == expected else f"DIGEST MISMATCH, got {found}"
 
