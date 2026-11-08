@@ -36,6 +36,21 @@ Check usage with `cat ~/orcd/.quota`. The Mordred store runs about 4 GB per
 100k molecules. The size curve then needs roughly 8 GB. The full million would
 need 40.
 
+## The environment is the slow part
+
+Two measurements from 8 November, both worth knowing before you wait on a job.
+
+`uv` hardlinks a package from its cache into `.venv` when both sit on the same
+filesystem, and copies it otherwise. `slurm/session.sh` puts the cache on
+scratch while `.venv` stays in `$HOME`, which are different filesystems, so
+every file is copied. Point `UV_CACHE_DIR` at `$HOME` if a sync feels slow and
+you have the quota for roughly 8 GB of cache.
+
+Installing the `analysis` extra on a compute node pulls JupyterLab, umap-learn,
+numba and llvmlite. A first sync of the full stack took over twenty minutes on a
+loaded node. Figures only need matplotlib, so prefer `uv run --with matplotlib`
+in a batch job over syncing the whole extra.
+
 ## Jobs
 
 | Need | Command |

@@ -15,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 from natural_compounds.config import load_config
-from natural_compounds.paths import DATA_PROCESSED, ROOT
+from natural_compounds.paths import DATA_PROCESSED, resolve_source
 from natural_compounds.splits import make_split, realised_fractions
 
 
@@ -25,7 +25,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    path = ROOT / cfg["source"]
+    path = resolve_source(cfg["source"])
     if not path.exists():
         raise SystemExit(f"task file not found: {path}")
 

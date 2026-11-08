@@ -15,6 +15,8 @@
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p runs/slurm
+export UV_CACHE_DIR="$HOME/.cache/uv"
+export NC_DATA_DIR="$HOME/orcd/scratch/natural-compounds-data"
 
 uv run python scripts/compute_descriptors.py "$1" \
     --shard "$SLURM_ARRAY_TASK_ID" --n-shards 20 --nproc "$SLURM_CPUS_PER_TASK"

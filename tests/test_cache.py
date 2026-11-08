@@ -3,7 +3,7 @@ import json
 import polars as pl
 import pytest
 
-from natural_compounds import cache
+from natural_compounds import cache, paths
 
 RAW = [
     "C1=CC=CC=C1",  # benzene, non-canonical input
@@ -20,7 +20,8 @@ def corpus(tmp_path, monkeypatch):
     """A tiny corpus on disk, with the cache redirected into tmp_path."""
     source = tmp_path / "raw.smi"
     source.write_text("\n".join(RAW))
-    monkeypatch.setattr(cache, "ROOT", tmp_path)
+    # Sources resolve through natural_compounds.paths, so that is what moves.
+    monkeypatch.setattr(paths, "ROOT", tmp_path)
     monkeypatch.setattr(cache, "cache_dir", lambda: tmp_path / "cache")
     return {"name": "tiny", "source": "raw.smi", "format": "smiles_list"}
 

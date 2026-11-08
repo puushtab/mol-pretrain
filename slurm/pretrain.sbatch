@@ -16,6 +16,8 @@
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p runs/slurm
+export UV_CACHE_DIR="$HOME/.cache/uv"
+export NC_DATA_DIR="$HOME/orcd/scratch/natural-compounds-data"
 
 uv sync --extra train --quiet
 uv run python -c "import torch; print('cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0))"

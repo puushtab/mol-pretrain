@@ -241,3 +241,10 @@ notebooks/**/*.html
 .vscode/
 .idea/
 runs/slurm/
+
+# Papers. The PDFs are published articles and course material: we keep them
+# locally but not in the repository. papers/README.md says where each came
+# from, and docs/literature-review.md carries what we took from them.
+papers/*.pdf
+papers/*.html
+papers/*.txt

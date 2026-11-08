@@ -21,7 +21,7 @@ from typing import Any
 import polars as pl
 from rdkit import Chem, RDLogger
 
-from natural_compounds.paths import DATA_PROCESSED, ROOT
+from natural_compounds.paths import DATA_PROCESSED, resolve_source
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -55,7 +55,7 @@ def _canonicalise_chunk(args: tuple[list[str], int]) -> list[tuple[str, int, int
 
 def read_raw(cfg: dict[str, Any]) -> pl.Series:
     """Read a corpus source without touching it. Either a CSV column or a SMILES list."""
-    path = ROOT / cfg["source"]
+    path = resolve_source(cfg["source"])
     if not path.exists():
         raise SystemExit(f"corpus source not found: {path}\nSee data/README.md.")
     if cfg.get("format") == "smiles_list":
@@ -120,7 +120,7 @@ def build(cfg: dict[str, Any], workers: int = 1, force: bool = False) -> dict[st
         "unique": len(frame),
         "multifragment": int((frame["n_fragments"] > 1).sum()),
         "over_150_chars": int((frame["n_chars"] > 150).sum()),
-        "cache": str(target.relative_to(ROOT)),
+        "cache": str(target),
     }
     manifest_path(corpus).write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest

@@ -26,7 +26,7 @@ from natural_compounds.chem import (
 from natural_compounds.config import load_config
 from natural_compounds.experiments import expand_conditions
 from natural_compounds.manifest import write_manifest
-from natural_compounds.paths import CONFIGS, DATA_PROCESSED, ROOT, RUNS
+from natural_compounds.paths import CONFIGS, DATA_PROCESSED, RUNS, resolve_source
 
 # Pairwise similarity is quadratic. Subsample the corpora before it.
 SAMPLE = 4000
@@ -49,7 +49,7 @@ def load_tasks(cfg: dict) -> dict[str, list[str]]:
     tasks = {}
     for name in cfg.get("tasks", []):
         task_cfg = load_config(CONFIGS / "tasks" / f"{name}.yaml")
-        path = ROOT / task_cfg["source"]
+        path = resolve_source(task_cfg["source"])
         if path.exists():
             tasks[name] = pd.read_csv(path)[task_cfg["smiles_column"]].astype(str).tolist()
         else:

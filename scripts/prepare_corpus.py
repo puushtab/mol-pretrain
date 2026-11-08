@@ -30,7 +30,7 @@ from natural_compounds.cache import apply_clean, load, resolve
 from natural_compounds.chem import canonicalize
 from natural_compounds.config import load_config
 from natural_compounds.experiments import Condition, condition_dict, expand_conditions
-from natural_compounds.paths import CONFIGS, DATA_PROCESSED, ROOT, ensure_dirs
+from natural_compounds.paths import CONFIGS, DATA_PROCESSED, ensure_dirs, resolve_source
 
 
 def filter_np_like(frame: pl.DataFrame, cfg: dict, stats: dict) -> pl.DataFrame:
@@ -56,7 +56,7 @@ def benchmark_molecules(task_names: list[str]) -> set[str]:
     molecules: set[str] = set()
     for name in task_names:
         cfg = load_config(CONFIGS / "tasks" / f"{name}.yaml")
-        path = ROOT / cfg["source"]
+        path = resolve_source(cfg["source"])
         if not path.exists():
             raise SystemExit(f"task file not found: {path}")
         frame = pl.read_csv(path, infer_schema_length=0)
