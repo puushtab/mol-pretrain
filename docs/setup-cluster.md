@@ -2,61 +2,67 @@
 
 ## Once per account
 
-1. SSH key for GitHub, added at github.com → Settings → SSH keys:
-   ```bash
-   ssh-keygen -t ed25519 -C "orcd" -f ~/.ssh/id_ed25519_github && cat ~/.ssh/id_ed25519_github.pub
-   printf 'Host github.com\n  IdentityFile ~/.ssh/id_ed25519_github\n  IdentitiesOnly yes\n' >> ~/.ssh/config && chmod 600 ~/.ssh/config
-   ssh -T git@github.com
-   ```
-2. uv (no sudo, no module):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc
-   ```
-3. Clone into home and set identity:
-   ```bash
-   git clone git@github.com:puushtab/natural-compounds.git ~/natural-compounds
-   cd ~/natural-compounds && git config user.name "Your Name" && git config user.email "you@mit.edu"
-   ```
-4. Install and verify:
-   ```bash
-   source slurm/session.sh && make test
-   ```
+```bash
+# SSH key for GitHub, then add the public key at github.com -> Settings -> SSH keys
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_github && cat ~/.ssh/id_ed25519_github.pub
+ssh -T git@github.com
 
-Do not run `conda init`, do not `pip install --user`, do not keep data in `$HOME`.
+# uv, no sudo and no module needed
+curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc
+
+git clone --recurse-submodules git@github.com:puushtab/mol-pretrain.git ~/mol-pretrain
+cd ~/mol-pretrain && source slurm/session.sh && make test
+```
+
+Do not run `conda init`. Do not `pip install --user`. Do not keep data in `$HOME`.
 
 ## Every session
 
 ```bash
-cd ~/natural-compounds && source slurm/session.sh
+cd ~/mol-pretrain && source slurm/session.sh
 ```
 
-This exports the scratch paths, pulls `main`, syncs the venv, and prints the state.
-Login nodes have no GPU: `torch.cuda.is_available()` is `False` there by design.
+Login nodes have no GPU. `torch.cuda.is_available()` is `False` there by design.
 
 ## Storage
 
 | Path | Size | Backed up | Use for |
 |---|---|---|---|
 | `$HOME` | 200 GB | yes | code, venv |
-| `$HOME/orcd/scratch` | 1 TB | no, purged after 6 months idle | uv cache, data, runs |
-| `$HOME/orcd/pool` | 1 TB | no | datasets to keep around |
+| `$HOME/orcd/scratch` | 1 TB | no, purged after six months idle | uv cache, data, runs |
+| `$HOME/orcd/pool` | 1 TB | no | datasets to keep |
 
-Check usage: `cat ~/orcd/.quota`.
+Check usage with `cat ~/orcd/.quota`. The Mordred store runs about 4 GB per
+100k molecules. The size curve then needs roughly 8 GB. The full million would
+need 40.
 
-## GPUs
+## Jobs
 
 | Need | Command |
 |---|---|
-| Interactive shell, 1 L40S, 2 h | `./slurm/gpu-shell.sh` |
-| Batch pretraining, 6 h max | `sbatch slurm/pretrain.sbatch configs/pretrain/default.yaml data/processed/corpora/<name>.csv` |
-| Queue status | `squeue --me` |
-| Cancel | `scancel <jobid>` |
+| Interactive GPU shell, two hours | `./slurm/gpu-shell.sh` |
+| Descriptors, CPU array | `sbatch slurm/descriptors.sbatch data/processed/corpora/<name>.csv` |
+| Pretraining, six hours | `sbatch slurm/pretrain.sbatch <corpus> <size> <seed>` |
+| Queue | `squeue --me` |
 
-Partitions: `mit_normal_gpu` (6 h, 2 GPUs max, L40S default, `-G h200:1` for 141 GB memory)
-and `mit_preemptable` (48 h, 4 GPUs, can be killed). Never ask for more than 16 cores per GPU.
-Any run longer than 6 h must checkpoint and resume.
+| Partition | Wall | GPUs | Notes |
+|---|---|---|---|
+| `mit_normal` | 12 h | none | descriptors live here |
+| `mit_normal_gpu` | 6 h | 2 | L40S by default, `-G h200:1` for 141 GB |
+| `mit_preemptable` | 48 h | 4 | can be killed at any moment |
 
-Verify the GPU from inside an allocation:
-```bash
-uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-```
+The size curve does not fit on `mit_normal_gpu`. The six-hour wall turns it into
+about twenty queued jobs. It belongs on `mit_preemptable`, where the sizes run
+one per GPU inside a single 48-hour allocation. Checkpoint and resume are then
+mandatory, not optional.
+
+Ask for cores rather than a second GPU. The reference run looks bound by graph
+featurization on the CPU, not by the GPU. So `-c 16` with one GPU beats `-c 8`
+with two.
+
+## Open question
+
+ORCD publishes no GPU-hour allocation for the base tier. One page warns that
+over-requesting cores per GPU "may use up your allocation". So accounting exists,
+and its size is undocumented. Asked at orcd-help-engaging@mit.edu, answer
+pending. This is the only unknown that could break the plan rather than slow it.

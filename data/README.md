@@ -1,26 +1,33 @@
 # data/
 
-Nothing here is committed except this file and `.gitkeep`. Large files live locally
-(or on the cluster; point `NC_DATA_DIR` in `.env` at them).
+Nothing here is committed. Point `NC_DATA_DIR` at a bigger disk if `./data` is
+not where the files should live.
 
 ```
 data/
-  raw/          # downloads, untouched. One subfolder per source.
+  raw/                      downloads, untouched
+    pubchem/                cleaned_pubchem_1MM.smiles, CheMeleon's own corpus
     zinc/
     coconut/
-    tasks/      # TDC / MoleculeNet benchmark CSVs, one per task, with a `smiles` column
-  processed/    # produced by scripts/, reproducible from raw + configs
-    corpora/    # <name>.csv + <name>.stats.json
-    splits/     # <task>/seed<k>.json (frozen scaffold splits)
+    tasks/                  one CSV per benchmark
+  processed/                reproducible from raw plus configs
+    corpora/                <corpus>_n<size>_s<seed>.csv and its stats JSON
+    descriptors/            <corpus>_n<size>_s<seed>.zarr and standardisation vectors
+    splits/                 <task>/seed<k>.json
 ```
 
 ## Sources
 
 | Source | What | Where |
 |---|---|---|
+| PubChem 1M | CheMeleon's pretraining corpus | Zenodo record 15733575, `cleaned_pubchem_1MM.smiles`, 43.9 MB |
 | ZINC20 | general drug-like molecules | https://zinc20.docking.org |
 | COCONUT 2.0 | natural products | https://coconut.naturalproducts.net |
-| TDC | ADMET benchmarks | `pip install PyTDC` or https://tdcommons.ai |
+| TDC | ADMET benchmarks | https://tdcommons.ai |
 | MoleculeNet | classic benchmarks | https://moleculenet.org/datasets-1 |
+
+The same Zenodo record holds `pubchem_1MM.zarr.tar.xz`, 3 GB, the descriptors for
+the full corpus. Downloading it beats recomputing it for any size we do not
+subsample ourselves.
 
 Record the download date and version of every raw file in `docs/data_log.md`.

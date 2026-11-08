@@ -1,29 +1,61 @@
 # Local setup (laptop)
 
-## Once
-
-Requires git, [uv](https://docs.astral.sh/uv/) and GitHub access (`gh auth login` or an SSH key).
+Requires git and [uv](https://docs.astral.sh/uv/). Python 3.11 is pinned. That is
+what the vendored CheMeleon code runs on.
 
 ```bash
-git clone git@github.com:puushtab/natural-compounds.git && cd natural-compounds
-make setup      # core deps + dev tools; no torch
-make hooks      # pre-commit
-cp .env.example .env
-make test
+git clone --recurse-submodules git@github.com:puushtab/mol-pretrain.git
+cd mol-pretrain
+make setup && make hooks && make test
 ```
 
-Add `make setup-train` only if you want chemprop/torch locally. It pulls about 3 GB and
-CPU-only training is fine for smoke tests on a few thousand molecules.
+## Extras
+
+| Extra | Pulls | For |
+|---|---|---|
+| (none) | rdkit, pandas, scikit-learn | corpus preparation, splits, Stage A numbers |
+| `descriptors` | mordred, zarr | computing descriptors |
+| `analysis` | matplotlib, seaborn, umap | figures and notebooks |
+| `train` | torch, chemprop, lightning | pretraining, about 3 GB |
+
+```bash
+uv sync --extra analysis        # add figures
+uv sync --extra descriptors     # add descriptor computation
+```
+
+The laptop does not need `train`. Pretraining happens on the cluster.
+
+## Data
+
+```bash
+uv run python scripts/download_data.py          # about 2.3 GB
+uv run python scripts/download_data.py --verify # digests only, downloads nothing
+```
+
+Every file is checked against the digest recorded on 7 November 2026. A mismatch
+is not a nuisance, it means upstream changed. COCONUT publishes a new release
+monthly and the contents differ between them.
+
+The CheMeleon weights land in `~/.chemprop/chemeleon_mp.pt`, which is where
+chemprop itself looks for them.
+
+Then one cache per corpus, which is where canonicalisation happens:
+
+```bash
+uv run python scripts/build_cache.py configs/corpora/pubchem.yaml --workers 8
+uv run python scripts/build_cache.py configs/corpora/coconut.yaml --workers 8
+uv run python scripts/build_cache.py configs/corpora/zinc_general.yaml --workers 8
+uv run python scripts/build_cache.py configs/corpora/zinc_nplike.yaml --workers 8 --np-likeness
+```
+
+PubChem takes under two minutes on eight cores. ZINC takes longer, it has 11.7
+million molecules. Add `--np-likeness` only for a corpus that filters on the
+score, since scoring costs about as much again.
 
 ## Every session
 
 ```bash
-cd natural-compounds && git pull && uv sync --all-groups --quiet && make test
-```
-
-Then work on a branch:
-
-```bash
+git pull && uv sync --all-groups && make test
 git checkout -b exp/<topic>
 ```
 
@@ -31,18 +63,8 @@ git checkout -b exp/<topic>
 
 | Where | What |
 |---|---|
-| Laptop | code, tests, configs, notebooks on small samples, writing |
-| Cluster | corpus preparation on full data, pretraining, fine-tuning sweeps |
+| Laptop | code, tests, configs, Stage A on samples, writing |
+| Cluster | descriptors on full corpora, pretraining, fine-tuning |
 
-Everything moves between them through git. Data and `runs/` never do; regenerate them
-from configs or copy with `rsync` to `$NC_DATA_DIR` on the cluster.
-
-## Common commands
-
-| Task | Command |
-|---|---|
-| Lint and format | `make format` |
-| Tests | `make test` |
-| Run a script | `uv run python scripts/<name>.py <config>` |
-| Notebooks | `uv sync --extra analysis && uv run jupyter lab` |
-| Add a dependency | `uv add <package>` (commits `pyproject.toml` and `uv.lock`) |
+Everything moves between the two through git. Data and `runs/` never do.
+Regenerate them from the configs, which is the point of having configs.
