@@ -167,7 +167,9 @@ his pins.
   corpora differ by up to 2.15 standard deviations on single properties,
   COCONUT is the most redundant corpus, and PubChem already contains 73 percent
   of BBBP and 93 percent of ESOL. Section 5 to 8 of that report say what this
-  means for the rest of the project.
+  means for the rest of the project. Everything in it was then checked against
+  the code, the raw samples, the original papers and the lecture slides; what
+  that changed is listed in its section 10.
 
 ## 7. What to do next, in order
 

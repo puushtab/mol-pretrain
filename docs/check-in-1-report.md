@@ -49,7 +49,7 @@ was indifferent to the difference.
 
 ## 2. What was run
 
-One Slurm job on a CPU node, 8 cores, 8 minutes 19 seconds wall clock, 2.96 GB
+One Slurm job on a CPU node, 8 cores, 8 minutes 19 seconds wall clock, 3.0 GB
 peak memory. Every step is independent and skips work already on disk, so the
 job is safe to rerun and safe to preempt. The report tables and the splits
 were regenerated the same day, after an independent recomputation and a
@@ -65,9 +65,12 @@ changes they forced are listed in section 10.
 | Stage A analysis | the original comparison, including the t-SNE map |
 | Descriptors | Mordred store for the pilot pretraining condition |
 
-Provenance is recorded in `manifest.json` next to each output: commit
-`a0525b4`, clean working tree, and the exact version of RDKit, Mordred, NumPy,
-scikit-learn and Zarr used. Results are at
+Provenance is recorded in `manifest.json` next to each output, with the exact
+version of RDKit, Mordred, NumPy, scikit-learn and Zarr used: the caches,
+conditions and the original Stage A analysis at commit `a0525b4` on a clean
+tree; the benchmark splits at `d6069a8`, regenerated with uncommitted edits in
+the tree (job 28357897); the report tables at `2e64b52` on a clean tree (job
+28360099). Results are at
 `runs/analysis/stage_a_corpora/`; data products are on scratch under
 `natural-compounds-data/processed/`.
 
@@ -217,9 +220,9 @@ share of molecules.
 | corpus | ring molecules | scaffolds | per ring molecule | evenness | top-100 share | singletons (scaffolds / molecules) | acyclic |
 |---|---|---|---|---|---|---|---|
 | zinc_general | 19,841 | 15,798 | 0.796 | 0.954 | 13.3% | 93.4% / 74.4% | 0.8% |
-| coconut | 17,535 | 10,561 | 0.602 | 0.931 | 18.8% | 81.6% / 49.1% | 12.3% |
+| coconut | 17,535 | 10,561 | 0.602 | 0.931 | 18.7% | 81.6% / 49.1% | 12.3% |
 | zinc_nplike | 19,579 | 12,282 | 0.627 | 0.908 | 23.4% | 88.3% / 55.4% | 2.1% |
-| pubchem | 18,713 | 10,348 | 0.553 | 0.894 | 24.0% | 81.6% / 45.2% | 6.4% |
+| pubchem | 18,713 | 10,348 | 0.553 | 0.894 | 23.9% | 81.6% / 45.2% | 6.4% |
 
 ![Scaffold concentration over ring-containing molecules. The further a curve bows toward the top-left, the more of the corpus sits on a few repeated frameworks. ZINC is closest to the diagonal; PubChem is the most concentrated, with COCONUT and the natural-product-like decile between.](runs/analysis/stage_a_corpora/report/scaffold_concentration.png)
 
@@ -258,8 +261,8 @@ sample occupies. The 2,000-molecule sample is the first 2,000 rows of the
 | corpus | mean pairwise | pairs above 0.4 | near twins at 2,000 | near twins at 10,000 | coarse coverage at 2,000 | coarse coverage at 10,000 |
 |---|---|---|---|---|---|---|
 | zinc_general | 0.119 | 0.009% | 0.0% | 0.1% | 0.854 | 0.640 |
-| zinc_nplike | 0.111 | 0.011% | 0.0% | 0.4% | 0.814 | 0.549 |
-| pubchem | 0.101 | 0.034% | 1.0% | 4.9% | 0.702 | 0.456 |
+| zinc_nplike | 0.111 | 0.010% | 0.0% | 0.4% | 0.814 | 0.549 |
+| pubchem | 0.101 | 0.036% | 1.0% | 4.9% | 0.702 | 0.456 |
 | coconut | 0.105 | 0.77% | 11.8% | 20.5% | 0.593 | 0.366 |
 
 "Near twins" is one minus the close-analogue coverage: the share of molecules
@@ -297,12 +300,22 @@ draw that sparse, so these numbers describe redundancy *within a draw of this
 size from each corpus as we hold it*, which is what a pretraining arm would
 see, and not the analogue structure of ZINC20 as a whole. Second, the coarse
 coverages are the externally checkable numbers: ChemFM reports a UniChem
-sphere-exclusion diversity of 0.70 and 0.38 under its two settings (Table S1.2),
-and our four corpora at 10,000 molecules span 0.37 to 0.64, the same range.
+sphere-exclusion diversity of 0.697 at 10,000 molecules and 0.377 at 100,000
+(Table S1.2, one radius, two sample sizes), and our four corpora at 10,000
+molecules span 0.37 to 0.64, all at or below UniChem's value.
+
+The result is not a fingerprint artefact of molecular size, which would be the
+obvious objection since COCONUT holds the largest molecules here and larger
+molecules set more bits. Matched for size, PubChem's molecules above 500
+daltons show a 95th-percentile pairwise similarity of 0.18 and 0.2 percent of
+pairs above 0.4, while COCONUT's show 0.59 and 8.2 percent; keeping one
+COCONUT molecule per scaffold collapses that tail. The redundancy is real and
+it is concentrated in COCONUT's heavy fraction, where glycosides and
+polyketide families live.
 
 **Consequence: nominal size and effective size diverge by corpus.** At a fixed
-count of molecules, COCONUT carries fewer distinct coarse regions and five
-times PubChem's share of near twins. One million COCONUT molecules do not carry
+count of molecules, COCONUT carries fewer distinct coarse regions and four
+times PubChem's share of near twins (20.5 against 4.9 percent at 10,000). One million COCONUT molecules do not carry
 a million molecules' worth of distinct chemistry. Any size-matched comparison
 matches the wrong quantity unless this is stated.
 
@@ -354,8 +367,9 @@ rows).
 | coconut | 738,767 | 36.1% | 55.6% |
 | zinc_general | 499,998 sampled | 0.0% | 0.0% |
 
-An earlier count over the full 11.7-million-molecule ZINC upload found 0.3 and
-0.1 percent, so ZINC's exposure is not exactly zero, only negligible.
+A one-off count over the full 11.7-million-molecule ZINC upload on 7 November,
+not reproduced here, found 0.3 and 0.1 percent, so ZINC's exposure is not
+exactly zero, only negligible.
 
 **The PubChem figure says something about the corpus itself.** CheMeleon's
 paper describes the pretraining set as "randomly selecting 1 million molecules
@@ -390,21 +404,40 @@ pool's own overlap rate), counting train, validation and test together;
 roughly a tenth of those, 13 and 9, would fall in a given test split. ZINC
 would carry none.
 
+These counts are lower bounds. Exact canonical matching has no false-positive
+channel, so every error is a miss. Allowing salts and stereo marks to differ
+lifts PubChem's BBBP figure from 73.1 to 82.3 percent and COCONUT's from 36.1
+to 40.0; ESOL barely moves, to 93.4 percent, because almost none of it carries
+stereocentres or counter-ions. Nor is the ESOL figure an artefact of small
+molecules: PubChem still contains 89.4 percent of the ESOL structures with 16
+or more heavy atoms, and ZINC contains none in any size bin.
+
 No labels leak: pretraining is unsupervised descriptor regression, and the
-property labels never enter it. But the arms would differ systematically in how
-many benchmark structures the encoder has already seen, which makes exposure a
-component of the treatment rather than a nuisance beside it. These counts are
-lower bounds, since a benchmark molecule recorded as a salt or with different
-stereo marks will not match its parent.
+property labels never enter it. What exposure changes is how many benchmark
+structures the encoder has already seen, and how much that matters depends on
+the comparison.
+
+- **Against the released checkpoint**, trained on the whole PubChem file, it is
+  severe. That model has seen 72.7 percent of the BBBP test split and 91.2
+  percent of ESOL's at seed 0. Stage B therefore measures transfer to molecules
+  the encoder mostly knows, and has to say so.
+- **Among our own arms** at 20,000 to 50,000 molecules it is small but
+  systematic: one to two percent for PubChem, about one percent for COCONUT,
+  zero for both ZINC arms, in the same direction as proximity. It stays part of
+  the treatment, and the `--exclude-benchmarks` rerun is what tests it.
+- **Along the Stage C size curve** it grows with the corpus, from a single
+  benchmark structure at 500 molecules to a few hundred at 100,000, which is
+  why that curve needs its sensitivity check at its largest size rather than
+  its smallest.
 
 ### 4.2 Proximity
 
 Similarity from each benchmark molecule to its nearest neighbour in the whole
 20,000-molecule condition, which is what a pretraining run of that size would
-see. The reference size matters: against a 4,000-molecule subsample the means
-are 0.08 to 0.12 lower and the "remote" shares 20 to 25 points higher, so these
-figures hold for conditions of this size and would rise further for the full
-corpora.
+see. The reference size matters: against a 4,000-molecule subsample the means are
+0.04 to 0.13 lower (0.04 to 0.05 for the ZINC arms, 0.08 to 0.13 for COCONUT
+and PubChem) and the "remote" shares 15 to 25 points higher, so these figures
+hold for conditions of this size and would rise further for the full corpora.
 
 | task | corpus | mean | share below 0.3 | share above 0.4 |
 |---|---|---|---|---|
@@ -435,12 +468,12 @@ scaffolds, redundancy and benchmark proximity. Stage A has done its job.
 **Three variables move together** across the Stage D arms, and no size-matched
 design separates them:
 
-| | NP-likeness | property profile | benchmark exposure | benchmark proximity |
+| | NP-likeness | property profile | exposure, full corpus / 20k arm | proximity |
 |---|---|---|---|---|
-| pubchem | low | aromatic, flat | very high | nearest |
-| coconut | high | heavy, saturated, stereo-rich | moderate | middle |
-| zinc_general | lowest | drug-like, synthetic | none | far |
-| zinc_nplike | middle | small, saturated, stereo-rich | none | farthest |
+| pubchem | low | aromatic, flat, nitrogen-moderate | 73–93% / about 2% | nearest |
+| coconut | high | heavy, saturated, stereo-rich, oxygen-rich | 36–56% / about 1% | middle |
+| zinc_general | lowest | drug-like, synthetic, nitrogen-rich | none / none | far |
+| zinc_nplike | middle | small, saturated, stereo-rich | none / none | farthest |
 
 Reading a Stage D difference as "natural products help" requires ruling out the
 other three columns. Two controls make that possible, and both are cheap
@@ -601,8 +634,9 @@ sbatch slurm/stage-a.sbatch
 
 The job skips any step whose output already exists, so it is safe to rerun. On a
 clean checkout it fetches about 300 MB, builds four caches from 2.2 million
-molecules, and produces everything in this report in roughly 25 minutes; with
-the data already present it takes 8.
+molecules, and produces everything in this report in an estimated 25 minutes
+(not timed end to end; the caching step alone took 3); with the data already
+present it takes 8.
 
 | Output | Location |
 |---|---|
@@ -623,9 +657,10 @@ numbers.
 
 - All tables except benchmark exposure are computed on 20,000-molecule samples,
   not on the full corpora. Sampling error on the effect sizes is small at that
-  size, but the scaffold and sphere counts would change with sample size by
-  construction, which is why the decay between two sample sizes is reported
-  rather than a single absolute count.
+  size, but scaffold and sphere counts change with sample size by
+  construction, which is why sphere coverage is reported at two nested sample
+  sizes rather than as one count, and why no scaffold count here should be
+  compared with one from a different sample size.
 - Exposure is counted by exact canonical SMILES. Salts, tautomers and
   stereochemical variants are missed, so all exposure figures are lower bounds.
 - Similarity throughout is Morgan fingerprint Tanimoto (radius 2, 2,048
@@ -649,8 +684,8 @@ numbers.
   bonds, logP and stereocentres is many times another corpus's. The effect-size
   table therefore also carries a rank-based measure (probability of
   superiority, Cliff's delta) and medians; 20 of the 78 comparisons are large
-  on Cliff's scale, 16 on Cohen's, and no conclusion in this report depends on
-  which is used.
+  on Cliff's scale (|δ| ≥ 0.474), 24 on Cohen's (d ≥ 0.8) and 16 exceed
+  d = 1.0, and no conclusion in this report depends on which is used.
 - What the review changed. The first version of this report counted the empty
   scaffold as a scaffold, reported sphere decay from a saturated ceiling,
   measured proximity against a 4,000-molecule subsample, divided exact
