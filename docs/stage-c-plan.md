@@ -238,3 +238,54 @@ node feature, which does not exist on this cluster.
 conditions, describes the 100,000-molecule reference first, freezes the vectors
 against it, then describes the other thirteen against that reference. One queue
 wait instead of two, and every step skips work already on disk.
+
+---
+
+## 10. Gate G1, measured 8 November
+
+The pilot ran: PubChem 500 molecules, seed 0, one L40S, fp32. It trained for
+329 seconds over 308 epochs, early-stopping on a best epoch of 258, and
+reached a test mean squared error of 0.305 on the standardised descriptor
+targets.
+
+**Measured throughput: 364 training molecules per second**, 0.96 seconds per
+epoch at three batches of 128. Projecting it across the curve, with the
+pilot's own 308 epochs as the low case and the 500-epoch cap as the high one:
+
+| size | train molecules | at 300 epochs | at 500 epochs | 6-hour chunks |
+|---|---|---|---|---|
+| 500 | 350 | 0.1 h | 0.1 h | 1 |
+| 1,000 | 700 | 0.2 h | 0.3 h | 1 |
+| 5,000 | 3,500 | 0.8 h | 1.3 h | 1 |
+| 10,000 | 7,000 | 1.6 h | 2.7 h | 1 |
+| 25,000 | 17,500 | 4.0 h | 6.7 h | 1 to 2 |
+| 50,000 | 35,000 | 8.0 h | 13.4 h | 2 to 3 |
+| 100,000 | 70,000 | 16.0 h | 26.7 h | 3 to 5 |
+| **both seeds** | | **61 GPU-h** | **102 GPU-h** | |
+
+**G1 passes, and comfortably.** The rule was to proceed with the full table if
+a 100,000-molecule run projects under 30 GPU-hours per seed. It projects 16 at
+the pilot's epoch count and 27 at the 500-epoch cap, so the full curve runs as
+planned. The whole of Stage C costs 61 to 102 GPU-hours against the plan's
+estimate of 130 to 250, because the project plan assumed an L40S is three
+times a 2080 Ti while the measured gap is wider.
+
+Three consequences.
+
+- **Only 50,000 and 100,000 need chunking.** Everything to 25,000 fits in one
+  six-hour job, which is eleven of the fourteen conditions. The
+  checkpoint-and-resume wrapper is still required, but it is now needed for
+  three conditions rather than for the whole curve.
+- **bf16 is upside we have not spent.** The reference trains in fp32 because
+  the 2080 Ti had no bf16. The L40S does, and the dataloader runs four workers
+  against sixteen requested cores, so there is headroom on both sides.
+- **Preemption is real.** The preparation job was preempted twice in
+  twenty-five minutes on `mit_preemptable` and requeued itself both times,
+  losing only the work since its last completed descriptor shard. For a
+  16-hour pretraining run that behaviour would be ruinous without
+  checkpointing, which is the argument for B3 made from measurement rather
+  than from caution. CPU work now goes to `mit_normal`.
+
+Cost per condition on disk: 287 MB of Lightning checkpoints plus a 50 MB
+exported model, so about 4.7 GB for the full curve. Peak memory 3.1 GB against
+the 64 GB requested, which should come down.
