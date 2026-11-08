@@ -33,14 +33,20 @@ def scaffold_split(
     the rest are shuffled, and each group goes to the first subset with room for
     it. Test takes whatever is left and can overshoot when a few groups are very
     large. Check realised_fractions on a task you have not split before.
-    """
-    n_train, n_val = _subset_sizes(len(smiles), fractions)
-    n_test = len(smiles) - n_train - n_val
 
+    Rows RDKit cannot parse belong to no subset: no model can train on or be
+    scored on them, and grouping them under a pseudo-scaffold would move them
+    as a block into whichever subset had room. The returned indices therefore
+    cover the parseable rows only.
+    """
     groups = defaultdict(list)
     for i, s in enumerate(smiles):
         scaffold = murcko_scaffold(s)
-        groups["invalid" if scaffold is None else scaffold].append(i)
+        if scaffold is not None:
+            groups[scaffold].append(i)
+    n_valid = sum(len(g) for g in groups.values())
+    n_train, n_val = _subset_sizes(n_valid, fractions)
+    n_test = n_valid - n_train - n_val
 
     large = [g for g in groups.values() if len(g) > n_test / 2]
     small = [g for g in groups.values() if len(g) <= n_test / 2]

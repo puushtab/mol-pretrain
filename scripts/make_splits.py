@@ -43,9 +43,11 @@ def main() -> None:
             json.dumps({"train": train, "val": val, "test": test})
         )
         fractions = realised_fractions((train, val, test))
+        dropped = len(smiles) - len(train) - len(val) - len(test)
         print(
             f"seed {seed}: train={len(train)} val={len(val)} test={len(test)} "
             f"({fractions[0]:.2f}/{fractions[1]:.2f}/{fractions[2]:.2f})"
+            + (f", {dropped} unparseable row(s) in no subset" if dropped else "")
         )
 
     requested = tuple(cfg["split"]["fractions"])

@@ -94,3 +94,9 @@ def test_make_split_dispatches_and_rejects_unknown():
 def test_fractions_must_sum_to_one():
     with pytest.raises(ValueError, match="summing to 1"):
         scaffold_split(SMILES, (0.5, 0.2, 0.2), seed=0)
+
+
+def test_unparseable_rows_belong_to_no_subset():
+    smiles = MANY + ["not a smiles", "C(C"]
+    tr, va, te = scaffold_split(smiles, (0.8, 0.1, 0.1), seed=0)
+    assert sorted(tr + va + te) == list(range(len(MANY)))

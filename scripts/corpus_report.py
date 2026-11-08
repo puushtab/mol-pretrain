@@ -172,14 +172,21 @@ def property_effects(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
 def scaffold_table(corpora: dict[str, list[str]]) -> pd.DataFrame:
     """How many scaffolds, how concentrated, and how many molecules are acyclic.
 
-    The empty-scaffold fraction is here because it is what makes ESOL a bad
-    instrument: acyclic molecules share one scaffold and move as a block.
+    Acyclic molecules have an empty Murcko scaffold. Counting that empty string
+    as a scaffold makes every acyclic molecule in a corpus share one "scaffold",
+    which inflates the concentration statistics of exactly the corpus with the
+    most acyclic molecules. So the count, entropy, top-100 and singleton shares
+    are over ring-containing molecules only, matching analyze_corpora.py, and
+    the acyclic share is its own column. It is there because it is what makes
+    ESOL a fragile instrument: acyclic molecules share one scaffold group and
+    move as a block in a scaffold split.
     """
     rows = []
     for corpus, smiles in corpora.items():
         scaffolds = [murcko_scaffold(s) for s in smiles]
         resolved = [s for s in scaffolds if s is not None]
-        counts = Counter(resolved)
+        acyclic = sum(1 for s in resolved if s == "")
+        counts = Counter(s for s in resolved if s)
         total = sum(counts.values())
         frequencies = np.array(sorted(counts.values(), reverse=True), dtype=float)
         share = frequencies / total
@@ -188,15 +195,16 @@ def scaffold_table(corpora: dict[str, list[str]]) -> pd.DataFrame:
             {
                 "corpus": corpus,
                 "n_molecules": len(smiles),
+                "n_ring_molecules": total,
                 "n_scaffolds": len(counts),
-                "scaffolds_per_molecule": len(counts) / len(smiles),
+                "scaffolds_per_molecule": len(counts) / total,
                 "shannon_entropy": entropy,
                 "normalised_entropy": entropy / math.log(len(counts))
                 if len(counts) > 1
                 else float("nan"),
                 "top100_share": float(share[:100].sum()),
                 "singleton_scaffold_share": float((frequencies == 1).sum() / len(counts)),
-                "empty_scaffold_share": float(sum(1 for s in resolved if s == "") / total),
+                "empty_scaffold_share": acyclic / len(resolved),
             }
         )
     return pd.DataFrame(rows)
@@ -205,9 +213,15 @@ def scaffold_table(corpora: dict[str, list[str]]) -> pd.DataFrame:
 def _sphere_exclusion(fingerprints: np.ndarray, threshold: float) -> int:
     """Greedy sphere exclusion. Returns how many spheres the sample needs.
 
-    Divided by the sample size this is ChemFM's SEDiv. Its decay as the sample
-    grows is the redundancy signal: a library of analogue series fills few new
-    spheres as it grows, a diverse one keeps filling them.
+    Two molecules share a sphere when their Morgan Tanimoto similarity is at
+    least `threshold` (0.65 here, so distance at most 0.35). Divided by the
+    sample size this is a sphere-exclusion diversity in the sense of ChemFM's
+    SEDiv, but ChemFM (via MolScore) uses a Tanimoto *distance* threshold of
+    0.65, a far looser sphere, so the two numbers are not comparable. What we
+    use is the decay between two sample sizes within this study: a library of
+    analogue series fills few new spheres as it grows, a diverse one keeps
+    filling them. Validated on synthetic data: 10,000 unrelated molecules give
+    10,000 spheres; 200 seeds with 50 analogues each give exactly 200.
     """
     block = 512
     kept: np.ndarray | None = None
@@ -325,6 +339,10 @@ def task_tables(
 
     for task, task_smiles in tasks.items():
         for corpus, smiles in corpora.items():
+            # Exact matches are counted over unique canonical structures, so
+            # the share has to use that same denominator: the raw file holds
+            # duplicate rows and SMILES RDKit cannot parse.
+            unique = len(canonical_tasks[task])
             exact = len(canonical_tasks[task] & set(smiles))
             best = max_tanimoto_to_reference(task_smiles, samples[corpus])
             finite = best[np.isfinite(best)]
@@ -332,9 +350,10 @@ def task_tables(
                 {
                     "task": task,
                     "corpus": corpus,
-                    "task_molecules": len(task_smiles),
+                    "task_rows": len(task_smiles),
+                    "task_unique_structures": unique,
                     "exact_matches": exact,
-                    "exact_share": exact / len(task_smiles),
+                    "exact_share": exact / unique,
                     "near_duplicates_in_sample": int((finite >= NEAR_DUPLICATE).sum()),
                     "near_duplicate_share": float((finite >= NEAR_DUPLICATE).mean()),
                 }
@@ -378,7 +397,9 @@ def figures(
 
     fig, ax = plt.subplots(figsize=(7, 5))
     for corpus, smiles in corpora.items():
-        counts = Counter(s for s in map(murcko_scaffold, smiles) if s is not None)
+        # Ring-containing molecules only, as in scaffold_table: the empty
+        # scaffold would otherwise sit at rank one for COCONUT.
+        counts = Counter(s for s in map(murcko_scaffold, smiles) if s)
         frequencies = np.array(sorted(counts.values(), reverse=True), dtype=float)
         coverage = np.cumsum(frequencies) / frequencies.sum()
         ax.plot(np.arange(1, len(coverage) + 1) / len(coverage), coverage, label=corpus)
