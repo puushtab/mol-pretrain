@@ -47,6 +47,14 @@ one size with `--exclude-benchmarks` as a sensitivity check. The chemistry is
 held constant across that curve, so exposure and size covary but nothing else
 does. If the two runs agree, exposure is not driving the curve.
 
+That rerun is a separate condition, not the same one minus a few molecules.
+Removing molecules changes the pool length, so it changes the permutation and
+the draw is independent. `prepare_corpus.py --exclude-benchmarks` therefore
+writes `<run_id>_noleak.csv` and leaves the ordinary arm untouched. Describe and
+pretrain against that name. An earlier version wrote over the ordinary arm,
+which would have left a finished condition's descriptors and checkpoint pointing
+at a corpus file that no longer held the same molecules.
+
 Stage D is a different and worse problem. Measured over the full cached corpora,
 7 November 2026:
 
