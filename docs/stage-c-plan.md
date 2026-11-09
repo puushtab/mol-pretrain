@@ -368,3 +368,67 @@ molecules inside completed shards and confirming they reproduce the stored rows
 exactly. Describing scaled as expected with size: the 100,000-molecule
 conditions took about 9 and 29 minutes, the 50,000 ones 14 minutes each, and
 everything at 10,000 and below finished in under three minutes apiece.
+
+## 12. First wave and gate G1 recomputed, 8 November
+
+The eight small conditions were submitted at 20:28. By 21:45 five had finished
+and three were still training, none preempted.
+
+| condition | stopped at epoch | test MSE | wall time |
+|---|---|---|---|
+| 500, seed 0 | 227 | 0.296 | 6 min |
+| 500, seed 1 | 82 | 0.448 | 2 min |
+| 1,000, seed 0 | 241 | 0.310 | 13 min |
+| 1,000, seed 1 | 164 | 0.337 | 9 min |
+| 5,000, seed 0 | 308 | 0.149 | 68 min |
+| 5,000, seed 1 | at 270, running | | |
+| 10,000, both seeds | at 131 and 137, running | | |
+
+Every finished run stopped exactly 50 epochs after its best validation epoch,
+exported a 50 MB `best.pt`, and none reached the 500-epoch cap. The test MSE is
+on standardised descriptors over each condition's own held-out tenth, so it is
+a health check and not a curve: the test sets differ between conditions, and at
+500 molecules the test set is 50 molecules, which is why the two seeds sit
+0.15 apart. The curve's y-axis is fine-tuned BBBP and ESOL performance, which
+needs the fine-tuning loop.
+
+**Throughput is lower than the pilot said.** Gate G1 was passed on 364 training
+molecules a second, measured on the 500-molecule pilot. End to end, validation
+included, the real runs deliver 269 (5,000, seed 0), 214 (5,000, seed 1) and
+about 212 (10,000, both seeds). The cause is measured, not guessed: eight
+one-second samples of GPU utilisation on a running job read 0% seven times and
+84% once. The L40S is idle most of the time and the run is limited by the
+reference script's four dataloader workers, so a faster GPU would change
+nothing and the rate should hold at every size.
+
+At 215 to 270 molecules a second over the 70% training split:
+
+| size | per epoch | 300 epochs | 500-epoch cap |
+|---|---|---|---|
+| 25,000 | 65 to 81 s | 5.4 to 6.8 h | 9 to 11 h |
+| 50,000 | 130 to 163 s | 11 to 14 h | 18 to 23 h |
+| 100,000 | 259 to 326 s | 22 to 27 h | 36 to 45 h |
+
+A 100,000-molecule run therefore projects 22 to 45 GPU-hours a seed, not 16 to
+27. That straddles the 30 GPU-hour line of gate G1, whose pre-agreed rule for
+the 30-to-60 band is: proceed, 100k on preemptable only, started the same day
+as 25k rather than after it. Applied as written. The six large conditions were
+submitted at 21:46: 50k and 100k on `mit_preemptable` with a 48-hour wall and
+`--requeue`, and 25k on `mit_normal_gpu` as chains of three 6-hour jobs, each
+link starting only if the previous one did not finish and resuming from its
+`last.ckpt`. The remaining six cost 76 to 158 GPU-hours depending on where
+early stopping fires, against the 61 to 102 quoted for the whole curve in
+section 10, which is superseded.
+
+The per-user caps bound the calendar: 2 GPUs on `mit_normal_gpu` and 4 on
+`mit_preemptable`. With the worst case of 45 hours for 100k, every condition
+finishes by 11 November even if early stopping never fires, ten days inside
+the 21 November hard stop of gate G4.
+
+One option left open. Because the GPU is idle most of the time, raising the
+dataloader worker count from the wrapper could plausibly halve the wall time
+without touching the model, the optimiser or the data order. It is not applied:
+the runs fit the schedule without it, it would need its own check that the
+masking stays statistically identical, and changing how a run is loaded
+half-way through the curve is a difference a reader would have to be talked
+out of.
