@@ -15,6 +15,14 @@ Benchmark overlap is counted but not removed, because the released CheMeleon
 checkpoint did not remove it and Stage C compares against that checkpoint.
 Pass --exclude-benchmarks to remove it instead. The count lands in the stats
 either way, so a sensitivity analysis needs no rerun to know its size.
+
+That flag writes to `<run_id>_noleak.csv` and never touches the ordinary arm.
+It used to write to `<run_id>.csv`, which looked harmless and was not: removing
+molecules changes the pool length, so it changes the permutation, so the file
+holds a different population under the same name. A condition whose descriptors
+and checkpoint were already computed would silently stop matching its own
+corpus file, and `compute_descriptors.py` skips shards it has already done, so
+nothing would complain.
 """
 
 from __future__ import annotations
@@ -126,7 +134,13 @@ def main() -> None:
     parser.add_argument("--size", type=int)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--task", action="append", default=[], help="task name, repeatable")
-    parser.add_argument("--exclude-benchmarks", action="store_true")
+    parser.add_argument(
+        "--exclude-benchmarks",
+        action="store_true",
+        help="drop the benchmark molecules and write to <run_id>_noleak.csv, "
+        "leaving the ordinary arm's files alone. Point compute_descriptors.py "
+        "and pretrain.py at that name for the sensitivity run.",
+    )
     args = parser.parse_args()
     ensure_dirs()
 

@@ -9,14 +9,14 @@
 setup:
 	uv sync --all-groups --extra descriptors --extra analysis
 
-# Everything above plus the training stack. About 3 GB.
+# Adds the descriptor and training stacks. About 3 GB.
 #
-# It carries `analysis` too, which looks like a waste on a cluster. It is not.
-# corpus_report.py imports matplotlib to write its figure and does not catch the
-# failure, so a machine set up for training alone crashes partway through
-# `make stage-a` with the tables already written and the figure missing.
+# No `analysis` here on purpose. docs/setup-cluster.md measured that extra at
+# over twenty minutes on a loaded node, because it drags in JupyterLab, umap and
+# numba. The three scripts that draw figures skip them when matplotlib is
+# absent, and `uv run --with matplotlib` gets them back for one job.
 setup-train:
-	uv sync --all-groups --extra descriptors --extra analysis --extra train
+	uv sync --all-groups --extra descriptors --extra train
 
 # Fetch PubChem, COCONUT, the benchmarks and the weights. About 300 MB to download.
 data:
