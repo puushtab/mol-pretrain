@@ -75,6 +75,11 @@ def digest(path: Path) -> str:
     return sha.hexdigest()[:16]
 
 
+# Not a download, so it is not in SOURCES. scripts/sample_zinc.py writes it, and
+# this is the draw every committed number was computed on: seed 0, 250 shards,
+# two row groups each.
+ZINC_SAMPLE_DIGEST = "7a4f476ecaf3a460"
+
 CONNECTIONS = 8
 ATTEMPTS = 12
 
@@ -184,8 +189,21 @@ def main() -> None:
     if not args.verify and "coconut" in args.only:
         print(f"coconut extract: {unzip_coconut()}")
 
+    # ZINC is drawn rather than fetched, so it has no upstream digest to check
+    # against. It still has to match between machines: two people running the
+    # documented command get the same molecules only if the upload has not
+    # changed under them, and nothing else in the pipeline would notice.
     print()
-    print("ZINC is not fetched here. It is sampled, not downloaded whole:")
+    zinc = DATA_RAW / "zinc" / "zinc20_spread.csv"
+    if zinc.exists():
+        found = digest(zinc)
+        label = "ok" if found == ZINC_SAMPLE_DIGEST else f"DIFFERS (yours {found})"
+        print(f"zinc sample:\n  {str(zinc.relative_to(ROOT)):<58} {label}")
+        if label != "ok":
+            problems += 1
+            print("  A different draw is not wrong, but it is not the one the numbers came from.")
+    else:
+        print("ZINC is not fetched here. It is sampled, not downloaded whole:")
     print("  uv run python scripts/sample_zinc.py --shards 250 --groups-per-shard 2 --seed 0")
     print()
     print("Then build one cache per corpus, which canonicalises each once:")

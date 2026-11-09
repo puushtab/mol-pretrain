@@ -90,8 +90,11 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     if condition.size is not None:
         if len(frame) < condition.size:
             raise SystemExit(
-                f"{cfg['name']} has {len(frame)} usable molecules, "
-                f"fewer than the requested {condition.size}"
+                f"{cfg['name']} has {len(frame)} usable molecules, fewer than the requested "
+                f"{condition.size}.\nEither lower the size for every arm of the experiment, so "
+                f"they stay matched, or widen the pool. For zinc_nplike, widening means raising "
+                f"np_likeness_top_quantile, which lowers the score floor and weakens the contrast "
+                f"the arm exists to make. See docs/open-issues.md."
             )
         order = order[: condition.size]
     sample = frame[order.tolist()]
@@ -104,12 +107,16 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
 
     out_dir = DATA_PROCESSED / "corpora"
     out_dir.mkdir(parents=True, exist_ok=True)
-    sample.select("smiles").write_csv(out_dir / condition.corpus_file)
-    sample.select(["smiles", "source_row"]).write_parquet(
-        out_dir / f"{condition.run_id}.provenance.parquet"
-    )
-    (out_dir / f"{condition.run_id}.stats.json").write_text(json.dumps(stats, indent=2) + "\n")
-    print(f"  {condition.run_id}: {stats['final']} molecules")
+    # Removing the benchmark molecules changes the pool length, so it changes
+    # the permutation and the draw is not the main arm minus a few molecules, it
+    # is an independent sample. Writing both under one name would silently
+    # replace one population with the other, and the sensitivity check would
+    # then confound exclusion with resampling.
+    name = condition.run_id + ("_noleak" if exclude else "")
+    sample.select("smiles").write_csv(out_dir / f"{name}.csv")
+    sample.select(["smiles", "source_row"]).write_parquet(out_dir / f"{name}.provenance.parquet")
+    (out_dir / f"{name}.stats.json").write_text(json.dumps(stats, indent=2) + "\n")
+    print(f"  {name}: {stats['final']} molecules")
 
 
 def main() -> None:

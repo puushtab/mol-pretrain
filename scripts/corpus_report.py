@@ -9,7 +9,8 @@ which is what the Stage D argument needs and what the literature asks for.
 
 Seven blocks, each written as a CSV under runs/analysis/<experiment>/report/:
 
-  properties          per-corpus distribution of 13 physicochemical descriptors
+  properties          per-corpus distribution of 17 descriptors, natural-
+                      product-likeness among them, plus the per-molecule rows
   property_effects    pairwise Cohen's d and overlap for every property
   scaffolds           count, scaffolds per molecule, Shannon entropy, top-100
                       share, empty-scaffold fraction
@@ -17,7 +18,9 @@ Seven blocks, each written as a CSV under runs/analysis/<experiment>/report/:
                       at two sample sizes, whose decay measures redundancy
   nearest_neighbour   corpus-to-corpus nearest-neighbour similarity, quantiles
   task_exposure       exact and near-duplicate overlap with every task
-  task_proximity      per-task nearest-neighbour similarity to each corpus
+  task_proximity      per-task nearest-neighbour similarity to each corpus, as
+                      a summary and per molecule, which is what Stage B and
+                      Stage E bin on
 
 Why these. Ertl's own paper shows that a Bayesian classifier built from seven
 simple properties separates natural products from synthetics almost as well as
@@ -52,6 +55,7 @@ from natural_compounds.chem import (
 from natural_compounds.config import load_config
 from natural_compounds.experiments import expand_conditions
 from natural_compounds.manifest import write_manifest
+from natural_compounds.palette import LABEL, colour, ordered
 from natural_compounds.paths import CONFIGS, DATA_PROCESSED, RUNS, resolve_source
 
 # Quadratic blocks run on a subsample. 4,000 keeps a similarity matrix at
@@ -65,6 +69,12 @@ SPHERE_SAMPLES = (2000, 10000)
 # measures how fast a corpus fills chemical space at a coarse scale.
 SPHERE_THRESHOLDS = (0.65, 0.35)
 NEAR_DUPLICATE = 0.9
+# Enough for a 95 percent interval on a share and cheap, since the similarity
+# matrix the resamples index into is already built.
+BOOTSTRAP_DRAWS = 200
+# The order-dependence check the prose quotes. Twelve was the number measured by
+# hand; it is here so the number and the sentence cannot drift apart.
+SHUFFLES = 12
 SEED = 0
 
 
@@ -77,15 +87,26 @@ def _rdkit():
 
 
 def properties(smiles: list[str]) -> pd.DataFrame:
-    """Sixteen descriptors per molecule, the seven Ertl used among them."""
+    """Seventeen descriptors per molecule, the seven Ertl used among them.
+
+    Natural-product-likeness is one of the seventeen rather than a table of its
+    own, so the means, effect sizes and overlaps below cover it without a second
+    code path. Molecules are the index, which keeps `columns` numeric for the
+    callers that iterate it and lets a row be traced back to its structure.
+    """
+    from natural_compounds.nplikeness import _scorer
+
     Chem, Descriptors, Crippen, rdMolDescriptors = _rdkit()
-    rows = []
+    npscorer, np_model = _scorer()
+    rows, kept = [], []
     for s in smiles:
         mol = Chem.MolFromSmiles(s)
         if mol is None:
             continue
+        kept.append(s)
         rows.append(
             {
+                "np_likeness": npscorer.scoreMol(mol, np_model),
                 "mw": Descriptors.MolWt(mol),
                 "logp": Crippen.MolLogP(mol),
                 "tpsa": rdMolDescriptors.CalcTPSA(mol),
@@ -111,7 +132,7 @@ def properties(smiles: list[str]) -> pd.DataFrame:
                 "formal_charge": Chem.GetFormalCharge(mol),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, index=pd.Index(kept, name="smiles"))
 
 
 def property_table(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -189,7 +210,15 @@ def property_effects(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
                         "overlap": _overlap_coefficient(x, y),
                     }
                 )
-    return pd.DataFrame(rows).sort_values("cohens_d", key=abs, ascending=False)
+    frame = pd.DataFrame(rows)
+    # Where a mean difference comes from one corpus's tail rather than from any
+    # shift in the bulk, d is large and the rank statistic is not. Reading the
+    # sorted table from the top without this flag turns "COCONUT has a tail of
+    # peptides and glycosides" into "COCONUT molecules are more flexible", which
+    # is false of the typical molecule: on rotatable bonds the two medians are
+    # both 5 and d and Cliff's delta point in opposite directions.
+    frame["tail_driven"] = (frame.cohens_d.abs() > 0.3) & (frame.cliffs_delta.abs() < 0.15)
+    return frame.sort_values("cohens_d", key=abs, ascending=False)
 
 
 def scaffold_table(corpora: dict[str, list[str]]) -> pd.DataFrame:
@@ -249,6 +278,12 @@ def _sphere_exclusion(fingerprints: np.ndarray, threshold: float) -> int:
     tests/test_corpus_report.py: 2,000 unrelated fingerprints give 2,000
     spheres, 100 analogue series of 20 give exactly 100, and the count does
     not depend on block boundaries.
+
+    Greedy sphere exclusion is order dependent in general, so the real question
+    is how much. Measured on 4,000 molecules of each corpus over twelve
+    shuffles, the coverage standard deviation is 0.0000 to 0.0029 while the
+    gaps between corpora run from 0.08 to 0.29. The ordering is not an artefact
+    of the draw order.
     """
     block = 512
     kept: np.ndarray | None = None
@@ -276,7 +311,68 @@ def _sphere_exclusion(fingerprints: np.ndarray, threshold: float) -> int:
     return 0 if kept is None else len(kept)
 
 
-def diversity_table(corpora: dict[str, list[str]], rng: np.random.Generator) -> pd.DataFrame:
+def _sampling_units(corpus: str, index: np.ndarray) -> np.ndarray | None:
+    """What to resample for this corpus, or None where molecules are independent.
+
+    COCONUT and PubChem are uniform draws from their pools so the molecule is
+    the unit. The two ZINC arms are not: they come from 250 of 787 shards and a
+    molecule bootstrap would treat 4,000 correlated draws as 4,000 independent
+    ones. Their unit is the shard, recovered from the provenance file.
+    """
+    path = DATA_PROCESSED / "corpora" / f"{corpus}_n20000_s0.provenance.parquet"
+    if not corpus.startswith("zinc") or not path.exists():
+        return None
+    import polars as pl
+
+    return (pl.read_parquet(path)["source_row"].to_numpy() // 2000)[index]
+
+
+def _pairwise_interval(similarity: np.ndarray, units: np.ndarray | None, draws: int) -> dict:
+    """A bootstrap interval for the two pairwise shares, done the way it has to be.
+
+    A pairwise statistic cannot be bootstrapped the naive way. Resampling with
+    replacement duplicates units, a duplicated molecule pairs with its own copy
+    at Tanimoto 1.0, and those pairs are not data. On random ZINC they are
+    0.025 percent of all pairs against a true share above 0.4 of 0.009 percent,
+    so the artefact is 2.6 times the signal and the naive interval lands
+    entirely above the point estimate. Pairs whose two slots came from one
+    original row are dropped, which puts the point back inside.
+    """
+    n = len(similarity)
+    if units is None:
+        groups: np.ndarray = np.arange(n)
+        members = None
+    else:
+        groups = np.unique(units)
+        members = {g: np.flatnonzero(units == g) for g in groups}
+
+    rng = np.random.default_rng(SEED)
+    means, shares = np.empty(draws), np.empty(draws)
+    for i in range(draws):
+        picked = rng.choice(groups, size=len(groups), replace=True)
+        take = np.concatenate([members[g] for g in picked]) if members else picked
+        block = similarity[np.ix_(take, take)]
+        a, b = np.triu_indices(len(block), k=1)
+        keep = take[a] != take[b]
+        pairs = block[a, b][keep]
+        means[i] = pairs.mean()
+        shares[i] = (pairs > 0.4).mean()
+    quantiles = [0.025, 0.975]
+    low_mean, high_mean = np.quantile(means, quantiles)
+    low_share, high_share = np.quantile(shares, quantiles)
+    return {
+        "resampled": "shards" if units is not None else "molecules",
+        "resampling_units": int(len(groups)),
+        "mean_pairwise_lo": float(low_mean),
+        "mean_pairwise_hi": float(high_mean),
+        "pairs_over_0.4_lo": float(low_share),
+        "pairs_over_0.4_hi": float(high_share),
+    }
+
+
+def diversity_table(
+    corpora: dict[str, list[str]], rng: np.random.Generator, draws: int = BOOTSTRAP_DRAWS
+) -> pd.DataFrame:
     """Pairwise similarity on a 4,000-molecule sample, sphere coverage on nested samples.
 
     Coverage is spheres divided by sample size. The 2,000-molecule sample is the
@@ -285,6 +381,13 @@ def diversity_table(corpora: dict[str, list[str]], rng: np.random.Generator) -> 
     1.0 for a corpus with no close pairs, and a decay measured against a
     saturated value is a count of a handful of molecules; report the absolute
     coverages and compare corpora on those.
+
+    Two kinds of uncertainty sit on these numbers and they are different. The
+    pairwise shares get a bootstrap over sampling units, which says how much a
+    different draw of the same size would move them. Sphere coverage gets a
+    shuffle spread instead, because greedy sphere exclusion depends on the order
+    it walks the sample and that is the question worth answering about it. The
+    prose quoted a shuffle number that nothing computed; now it is a column.
     """
     rows = []
     for corpus, smiles in corpora.items():
@@ -294,11 +397,13 @@ def diversity_table(corpora: dict[str, list[str]], rng: np.random.Generator) -> 
         upper = similarity[np.triu_indices(len(similarity), k=1)]
         row = {
             "corpus": corpus,
+            "similarity_sample": len(fingerprints),
             "mean_pairwise_tanimoto": float(upper.mean()),
             "internal_diversity": float(1 - upper.mean()),
             "p95_pairwise_tanimoto": float(np.quantile(upper, 0.95)),
             "pairs_over_0.4": float((upper > 0.4).mean()),
             "pairs_over_0.65": float((upper > 0.65).mean()),
+            **_pairwise_interval(similarity, _sampling_units(corpus, index), draws),
         }
         small, large = SPHERE_SAMPLES
         if large > len(smiles):
@@ -314,6 +419,14 @@ def diversity_table(corpora: dict[str, list[str]], rng: np.random.Generator) -> 
             row[f"sphere_decay_{tag}"] = (
                 row[f"sphere_coverage_{tag}_n{small}"] - row[f"sphere_coverage_{tag}_n{large}"]
             )
+            shuffled = [
+                _sphere_exclusion(
+                    fingerprints[np.random.default_rng(s).permutation(len(fingerprints))], threshold
+                )
+                / len(fingerprints)
+                for s in range(SHUFFLES)
+            ]
+            row[f"sphere_order_sd_{tag}"] = float(np.std(shuffled, ddof=1))
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -357,7 +470,7 @@ def nearest_neighbour_table(
 
 def task_tables(
     corpora: dict[str, list[str]], tasks: dict[str, list[str]]
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Exposure counts, and each task molecule's distance to each corpus.
 
     The reference is the whole condition, 20,000 molecules here, because that
@@ -371,7 +484,7 @@ def task_tables(
     rows and SMILES RDKit cannot parse; exact matches are over unique canonical
     structures and similarity statistics over parseable rows.
     """
-    exposure, proximity = [], []
+    exposure, proximity, per_molecule = [], [], []
 
     # The corpora were canonicalised when their cache was built; the task CSVs
     # carry whatever SMILES their authors wrote. Comparing the two as strings
@@ -415,7 +528,25 @@ def task_tables(
                     "share_over_0.4": float((finite > 0.4).mean()),
                 }
             )
-    return pd.DataFrame(exposure), pd.DataFrame(proximity)
+            # Stage B bins test molecules on this and Stage E reports the gain
+            # per bin, so the rows have to carry an index back into the task
+            # file. row_index is the position in the raw CSV, which is what the
+            # frozen splits index too, so the three join directly.
+            per_molecule.append(
+                pd.DataFrame(
+                    {
+                        "task": task,
+                        "corpus": corpus,
+                        "row_index": np.arange(len(task_smiles)),
+                        "nearest_similarity": best,
+                    }
+                ).dropna(subset=["nearest_similarity"])
+            )
+    return (
+        pd.DataFrame(exposure),
+        pd.DataFrame(proximity),
+        pd.concat(per_molecule, ignore_index=True) if per_molecule else pd.DataFrame(),
+    )
 
 
 def full_corpus_exposure(corpus_names: list[str], tasks: dict[str, list[str]]) -> pd.DataFrame:
@@ -427,8 +558,20 @@ def full_corpus_exposure(corpus_names: list[str], tasks: dict[str, list[str]]) -
     checkpoint, trained on the whole PubChem file, actually saw. A derived
     corpus such as zinc_nplike reads its parent's cache and is reported under
     the parent, before its filter.
+
+    Both pools are reported. The raw cache answers the question above. The
+    cleaned pool answers "how much could reach an arm", which is what the Stage
+    D argument needs, and the two differ by corpus because cleaning costs
+    COCONUT 9 percent against three molecules of PubChem. Quoting the raw share
+    alone overstates COCONUT relative to the arms it is compared with.
+
+    `pool_is_sample` marks a row whose cache is a draw rather than a database.
+    Both ZINC arms read 500,000 molecules sampled from a 1.5-billion-row upload,
+    so a zero there is a property of the draw and not a statement about ZINC20.
     """
-    from natural_compounds.cache import cache_path
+    import polars as pl
+
+    from natural_compounds.cache import apply_clean, cache_path
 
     canonical_tasks = {
         task: {c for c in (canonicalize(s) for s in smiles) if c} for task, smiles in tasks.items()
@@ -445,62 +588,71 @@ def full_corpus_exposure(corpus_names: list[str], tasks: dict[str, list[str]]) -
         if not path.exists():
             print(f"  no cache for {cache}, skipping full-corpus exposure")
             continue
-        pool = set(pd.read_parquet(path, columns=["smiles"])["smiles"].tolist())
+        frame = pl.read_parquet(path)
+        pool = set(frame["smiles"].to_list())
+        cleaned = set(apply_clean(frame, cfg.get("clean"))["smiles"].to_list())
+        # Both are quoted downstream and they are not the same number. The
+        # per-task figure says how many BBBP structures a 50,000-molecule arm
+        # would hold. The union says how many benchmark structures of any kind,
+        # which is the one the Stage D exposure argument uses, and it is smaller
+        # than the sum because the two benchmarks share molecules.
+        union = set().union(*canonical_tasks.values())
+        expected_any = round(50_000 * len(union & cleaned) / len(cleaned), 1)
         for task, structures in canonical_tasks.items():
             hit = len(structures & pool)
+            hit_cleaned = len(structures & cleaned)
             rows.append(
                 {
                     "corpus": cache,
                     "pool_size": len(pool),
+                    "cleaned_pool_size": len(cleaned),
+                    "pool_is_sample": bool(cfg.get("population_sampled", False)),
                     "task": task,
                     "task_unique_structures": len(structures),
                     "exact_matches": hit,
                     "exact_share": hit / len(structures),
+                    "exact_matches_cleaned": hit_cleaned,
+                    "exact_share_cleaned": hit_cleaned / len(structures),
+                    "expected_in_50k_this_task": round(50_000 * hit_cleaned / len(cleaned), 1),
+                    "expected_in_50k_any_task": expected_any,
                 }
             )
     return pd.DataFrame(rows)
 
 
-def figures(
-    frames: dict[str, pd.DataFrame], corpora: dict[str, list[str]], out_dir: Path
-) -> list[str]:
-    """Three figures. Properties, scaffold concentration, corpus proximity."""
+def figures(corpora: dict[str, list[str]], out_dir: Path) -> list[str]:
+    """One figure. The property panels this used to write are drawn in the
+    notebook instead, trimmed at the 99th percentile and with units on the axes,
+    which the untrimmed version here never had. Nothing displayed it."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    written = []
-    shown = ["mw", "logp", "tpsa", "fraction_sp3", "rings", "stereocentres"]
-    fig, axes = plt.subplots(2, 3, figsize=(13, 7))
-    for ax, column in zip(axes.ravel(), shown, strict=True):
-        for corpus, frame in frames.items():
-            ax.hist(frame[column], bins=50, histtype="step", density=True, label=corpus)
-        ax.set_title(column)
-    axes.ravel()[0].legend(fontsize=7)
-    fig.suptitle("Property distributions by corpus")
-    fig.tight_layout()
-    fig.savefig(out_dir / "properties.png", dpi=150)
-    plt.close(fig)
-    written.append("properties.png")
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    for corpus, smiles in corpora.items():
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    for corpus in ordered(corpora):
         # Ring-containing molecules only, as in scaffold_table: the empty
         # scaffold would otherwise sit at rank one for COCONUT.
-        counts = Counter(s for s in map(murcko_scaffold, smiles) if s)
+        counts = Counter(s for s in map(murcko_scaffold, corpora[corpus]) if s)
         frequencies = np.array(sorted(counts.values(), reverse=True), dtype=float)
         coverage = np.cumsum(frequencies) / frequencies.sum()
-        ax.plot(np.arange(1, len(coverage) + 1) / len(coverage), coverage, label=corpus)
-    ax.set_xlabel("fraction of scaffolds, most common first")
-    ax.set_ylabel("fraction of molecules covered")
-    ax.set_title("Scaffold concentration")
-    ax.legend(fontsize=8)
+        ax.plot(
+            np.arange(1, len(coverage) + 1) / len(coverage),
+            coverage,
+            color=colour(corpus),
+            label=f"{LABEL.get(corpus, corpus)} ({len(counts):,} scaffolds)",
+        )
+    ax.plot([0, 1], [0, 1], color="black", lw=0.6, ls=":", label="perfectly even")
+    ax.set_xlabel("share of distinct scaffolds, most common first")
+    ax.set_ylabel("share of ring-containing molecules covered")
+    ax.set_title("Scaffold concentration, 20,000 molecules per corpus")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
     fig.savefig(out_dir / "scaffold_concentration.png", dpi=150)
     plt.close(fig)
-    written.append("scaffold_concentration.png")
-    return written
+    return ["scaffold_concentration.png"]
 
 
 def main() -> None:
@@ -546,6 +698,10 @@ def main() -> None:
     frames = {name: properties(smiles) for name, smiles in corpora.items()}
     property_table(frames).to_csv(out_dir / "properties.csv", index=False)
     property_effects(frames).to_csv(out_dir / "property_effects.csv", index=False)
+    # The summaries above throw away the joint distribution, and the confound
+    # this report is about lives in it: how natural-product-likeness moves with
+    # size, saturation and stereochemistry inside one corpus. Keep the rows.
+    pd.concat(frames, names=["corpus"]).to_parquet(out_dir / "properties_per_molecule.parquet")
 
     print("  scaffolds")
     scaffold_table(corpora).to_csv(out_dir / "scaffolds.csv", index=False)
@@ -560,16 +716,17 @@ def main() -> None:
 
     if tasks:
         print("  task exposure and proximity")
-        exposure, proximity = task_tables(corpora, tasks)
+        exposure, proximity, per_molecule = task_tables(corpora, tasks)
         exposure.to_csv(out_dir / "task_exposure.csv", index=False)
         proximity.to_csv(out_dir / "task_proximity.csv", index=False)
+        per_molecule.to_csv(out_dir / "task_proximity_per_molecule.csv", index=False)
         print("  full-corpus exposure")
         full_corpus_exposure(list(corpora), tasks).to_csv(
             out_dir / "full_corpus_exposure.csv", index=False
         )
 
     print("  figures")
-    written = figures(frames, corpora, out_dir)
+    written = figures(corpora, out_dir)
 
     summary = {
         "experiment": cfg["name"],

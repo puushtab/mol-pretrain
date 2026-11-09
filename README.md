@@ -72,10 +72,18 @@ make caches          # canonicalises each corpus once
 ```
 
 ZINC is sampled rather than downloaded whole. Its shards are blocked by tranche,
-so whole shards give a property-biased pool. `scripts/sample_zinc.py` reads
-scattered parquet row groups instead, which costs a quarter of the bytes and
-gives a sample whose two halves agree to 4 Da of mean molecular weight against
-51 for the old pool.
+so whole shards give a property-biased pool: the six we first downloaded average
+328.5 Da where a draw across 250 shards gives 343.1. `scripts/sample_zinc.py`
+reads scattered parquet row groups from 250 of the 787 shards instead, for a
+third of the bytes.
+
+An earlier version of this paragraph compared a half-sample agreement statistic,
+4 Da against 51. Those were two different statistics on two different objects
+and the check behind them has been withdrawn. What the sample is, and is not, is
+in `data/raw/zinc/zinc20_spread.manifest.json`: shards are the sampling unit and
+the design effect for the mean molecular weight is 237, which leaves about 2,109
+molecules' worth of information rather than 499,998. A design effect belongs to
+one statistic. The decile cutoff that defines `zinc_nplike` gives 83 instead.
 
 The cache is where canonicalisation happens, once. Preparing a condition then
 takes seconds rather than minutes.
@@ -83,10 +91,21 @@ takes seconds rather than minutes.
 Then Stage A, which needs no GPU:
 
 ```bash
-uv run python scripts/prepare_corpus.py --experiment configs/experiments/stage_a_corpora.yaml
-uv run python scripts/analyze_corpora.py configs/experiments/stage_a_corpora.yaml
-uv run python scripts/make_splits.py configs/tasks/bbbp.yaml
+make stage-a
+make reference-distance
 ```
+
+The first is five scripts and about twenty minutes: the conditions, the frozen
+splits, the quantitative report, the older similarity pass with the t-SNE, and
+the NPClassifier appendix. The second is separate because it runs against the
+whole pools rather than a 20,000-molecule condition, fingerprints 2.2 million
+molecules and takes about half an hour. Only section 9 of the notebook needs it.
+
+`notebooks/01_stage_a_corpora.ipynb` reads what those wrote and is where the
+Stage A argument is made. It recomputes nothing expensive so it opens and runs
+in seconds once the tables exist. Its first cell checks that the four output
+directories agree with the config and with each other, and says so if they do
+not.
 
 What runs today: acquisition, ZINC sampling, caching, corpus preparation,
 splits, descriptors, and the whole Stage A analysis, all verified on the real

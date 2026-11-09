@@ -21,6 +21,7 @@ from typing import Any
 import polars as pl
 from rdkit import Chem, RDLogger
 
+from natural_compounds.manifest import build_manifest_fields
 from natural_compounds.paths import DATA_PROCESSED, resolve_source
 
 RDLogger.DisableLog("rdApp.*")
@@ -121,6 +122,11 @@ def build(cfg: dict[str, Any], workers: int = 1, force: bool = False) -> dict[st
         "multifragment": int((frame["n_fragments"] > 1).sum()),
         "over_150_chars": int((frame["n_chars"] > 150).sum()),
         "cache": str(target),
+        # Canonical SMILES are an RDKit output rather than a property of the
+        # molecule. Two people on different versions get different dedup counts,
+        # different exact-match exposure and a different natural-product decile,
+        # with nothing on disk to show it.
+        **build_manifest_fields(),
     }
     manifest_path(corpus).write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest

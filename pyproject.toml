@@ -56,6 +56,9 @@ analysis = [
   "seaborn>=0.13,<0.14",
   "umap-learn>=0.5,<0.6",
   "jupyterlab>=4.2,<5",
+  # pandas needs it to read the parquet the Stage A notebook loads. It also sits
+  # in `train`, so the cluster already had it and a laptop did not.
+  "pyarrow>=17,<18",
 ]
 
 [dependency-groups]

@@ -61,6 +61,15 @@ explanation is that roughly a quarter of the arm is not natural-product
 chemistry. That has to be stated in the write-up rather than discovered by a
 reader.
 
+There is a reason the 23 percent is as low as it is, and it bears on how the
+COCONUT-to-ZINC contrast on this score should be read. COCONUT 1.0's own
+inclusion rule was a three-way or: a molecule was kept if it scored positive on
+NP-likeness, or NPClassifier called it a natural product, or it carried a sugar.
+So COCONUT's membership is partly set by the same score we select `zinc_nplike`
+with, and the two arms are not independent of the axis they are compared on.
+The or is loose enough that a quarter of the database still scores negative, so
+this is a caveat on the size of the gap rather than a reason to withdraw it.
+
 ## zinc_nplike is not "natural-product-like" in Ertl's sense
 
 The arm takes the top decile of zinc_general by NP-likeness. Measured, that
@@ -73,6 +82,21 @@ library toward natural-product chemistry buys what real natural products buy.
 But the arm's name promises more than the chemistry delivers, so the write-up
 should say "the most natural-product-like decile of ZINC" rather than "NP-like
 ZINC".
+
+Two measured consequences of defining it as a quantile.
+
+It is a truncated distribution where COCONUT is a full one. Nothing in
+`zinc_nplike` scores below +0.143 by construction, while a quarter of COCONUT
+sits at or below zero. On this axis the arm is more uniformly Ertl-positive than
+the natural-product database it is meant to resemble, which is a difference from
+COCONUT that has nothing to do with being synthetic.
+
+The cutoff is an estimate, and the ZINC sample is a cluster sample, so it has a
+real interval: +0.1426, cluster bootstrap [+0.105, +0.187]. Tight enough that
+the arm's definition is not at risk. Ertl's own +1.0 is a different matter. Only
+1.76 percent of our ZINC sample clears it, 8,794 molecules, so an Ertl-positive
+ZINC arm at 50,000 is not reachable from this pool at all. That is the real
+reason the arm is a quantile.
 
 ## The count that disagrees with the plan
 
@@ -87,16 +111,46 @@ which release it is.
 How much of each benchmark already sits inside each corpus, by exact canonical
 SMILES match.
 
-| corpus | contains BBBP | contains ESOL | expected in a 50k draw |
-|---|---|---|---|
-| pubchem | 73.1% | 93.2% | 127 |
-| coconut | 36.1% | 55.6% | 85 |
-| zinc_general | 0.3% | 0.1% | 0 |
+Two pools per corpus. The raw cache answers how much of the benchmark is in the
+source at all. The cleaned pool is what an arm could actually draw from, and it
+is the one the Stage D comparison needs, because cleaning costs COCONUT nine
+percent and PubChem nothing.
+
+| corpus | pool | contains BBBP raw / cleaned | contains ESOL raw / cleaned | expected in a 50k draw, either benchmark |
+|---|---|---|---|---|
+| pubchem | 944,286 | 73.1% / 73.1% | 93.2% / 93.2% | 127 |
+| coconut | 738,767 | 36.1% / 34.6% | 55.6% / 55.6% | 92 |
+| zinc_general | 499,998, a sample | 0.0% / 0.0% | 0.0% / 0.0% | 0 |
+
+The last column counts a structure once even when both benchmarks hold it so it
+is smaller than the two per-task figures added together. The CSV carries both.
 
 No label leaks, pretraining is unsupervised descriptor regression. But the three
-Stage D arms would carry 127, 85 and zero already-seen test structures at matched
+Stage D arms would carry 127, 92 and zero already-seen test structures at matched
 size, so exposure is part of what distinguishes the arms rather than a nuisance
-alongside them. docs/protocol.md carries the proposed handling.
+alongside them. docs/protocol.md carries the proposed handling and separates the
+three things that get called leakage.
 
-Caveat on the method: this counts exact canonical SMILES. A benchmark molecule
-recorded as a salt will not match an upstream parent, so these are lower bounds.
+For the released checkpoint the figures above are the whole story, and they are
+worse than they look when read as distance. Measured against all 944,286
+molecules it was trained on, ESOL's mean nearest-neighbour similarity is 0.976
+and its tenth percentile is 1.000. Only 68 of 1,128 molecules sit below 0.9.
+BBBP gives 0.943 and 303 of 2,039. So Stage B is mostly a measurement in the
+near regime whether or not it is designed as one. See docs/open-issues.md.
+
+Three caveats on the method, and they do not all point the same way.
+
+This counts exact canonical SMILES. A benchmark molecule recorded as a salt
+will not match an upstream parent, so these are lower bounds. Allowing salts and
+stereo marks to differ lifts PubChem's BBBP figure to 82.3 percent.
+
+The ZINC row is a property of our draw, not of ZINC20. The cache is 499,998
+molecules sampled from a 1.5-billion-row upload so the zero means our arm
+contains none, not that the library contains none. A one-off count over the
+discarded six-shard pool of 11.7 million found 0.3 and 0.1 percent. That pool
+was itself biased so treat the figure as indicative.
+
+An earlier version of this table printed 85 for COCONUT and the 0.3 and 0.1
+percent above as if they were pipeline output. Neither came from the pipeline.
+The numbers here are what `runs/analysis/stage_a_corpora/report/full_corpus_exposure.csv`
+produces.

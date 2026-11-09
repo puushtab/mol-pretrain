@@ -63,8 +63,13 @@ def tanimoto_matrix(query: np.ndarray, reference: np.ndarray) -> np.ndarray:
     """Pairwise Tanimoto between two fingerprint matrices.
 
     The intersection is a matmul, which BLAS does far faster than a Python loop
-    over RDKit calls. Rows are processed in blocks so the peak allocation stays at
-    one block rather than the whole output.
+    over RDKit calls. Blocking bounds the intermediate rather than the result:
+    the full output is allocated up front, so a 20,000 by 20,000 call costs 1.6
+    GB and the callers subsample before asking for one.
+
+    Checked against RDKit's own BulkTanimotoSimilarity on 300 COCONUT molecules
+    against 300 ZINC molecules: largest absolute difference 1.5e-08, which is
+    float32 rounding. Two all-zero fingerprints give 0.0, as RDKit does.
     """
     ref = reference.astype(np.float32)
     ref_bits = ref.sum(axis=1)
@@ -95,6 +100,6 @@ def descriptive_stats(smiles: Sequence[str]) -> dict[str, float]:
     stats: dict[str, float] = {"n": float(len(mols))}
     for name, prop in PROPERTIES.items():
         values = np.array([prop(m) for m in mols], dtype=float)
-        stats[f"{name}_mean"] = float(values.mean())
-        stats[f"{name}_std"] = float(values.std(ddof=1))
+        stats[f"{name}_mean"] = float(values.mean()) if len(values) else float("nan")
+        stats[f"{name}_std"] = float(values.std(ddof=1)) if len(values) > 1 else float("nan")
     return stats
