@@ -14,7 +14,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.12
-      - run: uv sync --all-groups
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run pytest
+      # Through the Makefile rather than by repeating its commands. This file
+      # held its own `uv sync --all-groups`, which installs the groups and none
+      # of the extras, so the moment a test imported polars the whole run died
+      # at collection. Calling the documented targets means CI tests the
+      # environment a person actually gets, and the two cannot drift again.
+      - run: make setup
+      - run: make lint
+      - run: make test
