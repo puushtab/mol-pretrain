@@ -1,10 +1,23 @@
-# Pretraining corpus: general sample from ZINC.
+# ZINC20, the general synthetic library. The control arm of Stage D.
+#
+# Not interchangeable with PubChem even though both are general. PubChem holds
+# anything ever reported, ZINC holds what you can buy. ChemFM found ZINC20
+# saturates at 60 million parameters while UniChem does not, and read that as
+# ZINC20 carrying less information. Testing it at our scale is this arm's point.
+#
+# Drawn by scripts/sample_zinc.py as a cluster sample over the whole
+# haydn-jones/ZINC20 upload: 250 shards of 787 drawn at random, two row groups of
+# a thousand molecules from each. An earlier pool of six whole shards was
+# discarded, it was blocked by tranche and its half-sample molecular weight means
+# differed by 51.4 Da. This draw differs by about 2.
+#
+# The population is the HuggingFace upload, not ZINC20 itself. Nobody has checked
+# the upload against a UCSF export. See data/raw/zinc/zinc20_spread.manifest.json.
 name: zinc_general
-source: data/raw/zinc/zinc_sample.csv   # raw download, see data/README.md
+source: data/raw/zinc/zinc20_spread.csv
+format: csv
 smiles_column: smiles
-size: 100000                            # size-matched across corpora; set after the pilot run
-seed: 0
-# Benchmark files (with a `smiles` column) whose molecules are removed from the corpus.
-# Missing file = error, by design.
-exclude:
-  - data/raw/tasks/example_task.csv
+reference: https://huggingface.co/datasets/haydn-jones/ZINC20
+clean:
+  max_smiles_length: 150
+  drop_multifragment: true

@@ -1,0 +1,10 @@
+# CheMeleon's own pretraining corpus, released with the paper.
+# This is the reference corpus: the published 1M checkpoint was trained on it,
+# so subsampling it is the only way to put the released model on our size curve.
+name: pubchem
+source: data/raw/pubchem/cleaned_pubchem_1MM.smiles
+format: smiles_list          # one SMILES per line, no header
+smiles_column: null
+# Zenodo record 15733575, file cleaned_pubchem_1MM.smiles (43.9 MB).
+# Effectively clean upstream: no salts, three SMILES over 150 characters, all RDKit-parsable.
+reference: https://zenodo.org/records/15733575

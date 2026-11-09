@@ -1,0 +1,13 @@
+# MoleculeNet ESOL, the Delaney solubility set. 1,128 molecules.
+# Regression, small, and the labels are measured rather than computed.
+name: esol
+source: data/raw/tasks/esol.csv
+smiles_column: smiles
+target_columns: ["measured log solubility in mols per litre"]
+task_type: regression
+metric: rmse
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4]
+label_counts: [50, 100, 500, null]

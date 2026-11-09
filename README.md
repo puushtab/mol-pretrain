@@ -1,65 +1,114 @@
 # natural-compounds
 
-**Does the pretraining corpus matter for molecular property prediction?**
+**Does the pretraining corpus matter for molecular property prediction, and how much of it do you need?**
 
-A model that predicts molecular properties can be trained on measured data alone, or first on a
-large collection of molecules that carry no measurements. We ask whether the choice of that
-collection matters, with the architecture, objective and training budget held fixed. We compare
-three size-matched corpora (a general ZINC sample, natural products from COCONUT, and ZINC
-molecules selected by natural-product-likeness) using Chemprop with a descriptor-prediction
-objective in the spirit of CheMeleon, and evaluate on scaffold-split benchmarks with low-label
-curves across seeds.
+A molecular property model can be trained on measured data alone. Or it can be
+pretrained first on a large collection of molecules that carry no measurements.
+We ask what that collection has to contain. The architecture, the objective and
+the recipe stay fixed at CheMeleon's throughout.
+
+Two things vary, in this order.
+
+**Size.** Re-pretrain on nested subsets of CheMeleon's own corpus and find where
+the curve flattens. If it flattens early then most of the corpus is redundant and
+every later experiment becomes cheap.
+
+**Composition.** At the size the curve says is enough, swap a general ZINC sample
+for natural products from COCONUT, and for ZINC molecules picked to look like
+natural products. That third arm separates covering the right chemistry from
+carrying information specific to natural products.
+
+## What is new here, and what is not
+
+ChemFM (Cai 2025) ran scaling experiments over *model* size, 10 million to 200
+million parameters. They found ZINC20 saturates at 60 million while UniChem does
+not. Their conclusion is that a smaller, more diverse corpus carries more
+information. Same intuition as ours, measured through validation loss on a 3
+billion parameter causal language model.
+
+We vary the *corpus* size instead, at a fixed model and a fixed objective, and we
+measure downstream task performance.
+
+NaFM (Ding 2026) pretrained on about 0.6 million COCONUT molecules. That
+establishes the natural-product corpus as viable. It does not compare it against
+a size-matched synthetic one.
 
 MIT 6.3930, fall 2026. Gabriel Dupuis, Leonard Mauvernay.
-Project home: [Notion](https://app.notion.com/p/Project-Home-40d142bcf3408053bc03d4172caaf403).
 
 ## Setup
 
-Two environments, one repo. Follow the guide for where you are:
+- Laptop: [docs/setup-local.md](docs/setup-local.md). `make setup && make test`.
+- MIT ORCD cluster: [docs/setup-cluster.md](docs/setup-cluster.md). Every session
+  starts with `source slurm/session.sh`.
 
-- **Laptop**: [docs/setup-local.md](docs/setup-local.md). Short version: `make setup && make hooks && make test`.
-- **MIT ORCD cluster**: [docs/setup-cluster.md](docs/setup-cluster.md). Every session starts with
-  `source slurm/session.sh`; GPUs via `./slurm/gpu-shell.sh` or `sbatch slurm/pretrain.sbatch`.
+Dependencies are pinned to the exact versions CheMeleon was built against. Not
+floated above them. Their pretraining script is vendored under `external/` and
+called rather than reimplemented. "Same recipe" is then a fact about the code
+instead of a claim in a paper.
 
 ## Layout
 
 ```
-configs/      one YAML per condition: corpora/, tasks/, pretrain/
-scripts/      the pipeline, run in order:
-              prepare_corpus -> make_splits -> pretrain -> finetune -> evaluate
-src/natural_compounds/
-              shared code with tests: chem (RDKit helpers), splits, metrics, config, paths
-tests/        pytest for src/
-data/         raw/ and processed/, gitignored (see data/README.md)
-runs/         model checkpoints and predictions, gitignored
-notebooks/    exploration (t-SNE, similarity, descriptor shifts)
-external/     vendored third-party code as pinned git submodules
-slurm/        session.sh (per-session env), gpu-shell.sh, pretrain.sbatch
-docs/         setup guides, protocol.md (frozen evaluation spec), experiments.md, data_log.md
+configs/corpora/      where a corpus comes from and how it is cleaned
+configs/pretrain/     CheMeleon's recipe, read off their source. Do not tune.
+configs/tasks/        one downstream benchmark each
+configs/experiments/  the grid: which corpora, which sizes, which seeds
+scripts/              prepare_corpus -> compute_descriptors -> pretrain -> finetune -> evaluate
+                      analyze_corpora and make_splits run before any of that
+src/natural_compounds/  chem, splits, nplikeness, experiments, manifest, metrics
+slurm/                session.sh, descriptors.sbatch (CPU array), pretrain.sbatch
+docs/                 plan.md, protocol.md, corpora.md, open-issues.md, setup guides
+external/chemeleon    the reference implementation, pinned by commit
 ```
 
 ## Pipeline
 
+Three one-off steps: fetch, sample ZINC, cache.
+
 ```bash
-uv run python scripts/prepare_corpus.py configs/corpora/coconut.yaml
-uv run python scripts/make_splits.py    configs/tasks/example_task.yaml
-uv run python scripts/pretrain.py       configs/pretrain/default.yaml data/processed/corpora/coconut.csv
-uv run python scripts/finetune.py       configs/tasks/example_task.yaml --checkpoint runs/pretrain/<run>/model.pt
-uv run python scripts/evaluate.py       runs/finetune
+make data            # about 800 MB, digest-checked
+make zinc            # draws 500k ZINC molecules, about 360 MB
+make caches          # canonicalises each corpus once
 ```
 
-`prepare_corpus` and `make_splits` work today. The three training scripts set up the run
-directory and stop with `NotImplementedError`; they are filled in during sprint 2.
+ZINC is sampled rather than downloaded whole. Its shards are blocked by tranche,
+so whole shards give a property-biased pool. `scripts/sample_zinc.py` reads
+scattered parquet row groups instead, which costs a quarter of the bytes and
+gives a sample whose two halves agree to 4 Da of mean molecular weight against
+51 for the old pool.
+
+The cache is where canonicalisation happens, once. Preparing a condition then
+takes seconds rather than minutes.
+
+Then Stage A, which needs no GPU:
+
+```bash
+uv run python scripts/prepare_corpus.py --experiment configs/experiments/stage_a_corpora.yaml
+uv run python scripts/analyze_corpora.py configs/experiments/stage_a_corpora.yaml
+uv run python scripts/make_splits.py configs/tasks/bbbp.yaml
+```
+
+What runs today: acquisition, ZINC sampling, caching, corpus preparation,
+splits, descriptors, and the whole Stage A analysis, all verified on the real
+corpora. Pretraining has never been executed, it needs a GPU. Fine-tuning is not
+written. Stages B to E are deliberately not built yet.
+
+Read docs/open-issues.md before starting Stage C or D. Two issues there have to
+be settled first and both have measurements behind them.
 
 ## Principles
 
-- The corpus is the only variable. Same model, objective, budget, splits and seeds everywhere.
-- Report spread across seeds, never a single number.
-- Remove benchmark molecules from every corpus before pretraining.
-- Freeze `docs/protocol.md` before the first GPU run.
+- The corpus is the only variable. Same model, objective, recipe, splits, seeds
+  and fine-tuning budget everywhere.
+- A run records the commit and the package versions that produced it. Without
+  that it is an anecdote rather than a result.
+- Report spread across seeds. Never a single number.
+- Benchmark overlap is measured, not silently removed. The released checkpoint
+  did not remove it and we compare against that checkpoint.
+- Freeze `docs/protocol.md` before the first pretraining run.
 
 ## References
 
-See the proposal in the Notion project home. Key ones: Chemprop (Heid 2024), CheMeleon
-(Burns 2026), ChemFM (Cai 2026), NaFM (Ding 2026), COCONUT 2.0 (Chandrasekhar 2025),
-NP-likeness (Ertl 2008), TDC (Huang 2022), MoleculeNet (Wu 2018).
+Chemprop (Heid 2024), CheMeleon (Burns 2026), ChemFM (Cai 2025), NaFM (Ding 2026),
+COCONUT 2.0 (Chandrasekhar 2025), NP-likeness (Ertl 2008), ZINC20 (Irwin 2020),
+TDC (Huang 2022), MoleculeNet (Wu 2018), MoLFormer (Ross 2022).

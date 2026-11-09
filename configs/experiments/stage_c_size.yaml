@@ -1,0 +1,26 @@
+# Stage C. How much pretraining data is actually needed?
+#
+# Sizes are the ones Yuxin named in the 2 November call: "if you subsample like
+# to like 500, like a thousand, like 10k, 100k". She added that 5,000 might be a
+# bit too low and that 50k "probably would be a good range, you would see it
+# relatively stabilizing". Both are on the curve. The point of the low end is
+# that if the curve is already flat at 5k then every later experiment runs at 5k.
+#
+# A condition is the triple (corpus, size, seed), expanded by
+# natural_compounds.experiments.expand_conditions.
+name: stage_c_size
+stage: C
+corpora: [pubchem]           # CheMeleon's own corpus. Only size varies.
+# The union of two sources that disagree, because it costs almost nothing to
+# satisfy both. The revised plan says 10k, 25k, 50k, 100k. The transcript has
+# Yuxin saying "500, like a thousand, like 10k, 100k", with 5,000 flagged as
+# maybe too low and 50k as "a good range". Union is 191,500 molecules against the
+# plan's 185,000, so about three percent more compute for three more points, and
+# the extra points sit exactly where she expects the curve to turn.
+sizes: [500, 1000, 5000, 10000, 25000, 50000, 100000]
+seeds: [0, 1]                # a curve needs its own error bar
+pretrain: configs/pretrain/chemeleon.yaml
+tasks: [bbbp, esol]
+# The released 1M checkpoint is the free top of the curve. It is only comparable
+# if our recipe matches theirs exactly, which is why the recipe is not tuned.
+reference_checkpoint: chemeleon_1M_released

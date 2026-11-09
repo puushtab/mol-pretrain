@@ -1,8 +1,25 @@
-# Pretraining corpus: natural products from COCONUT 2.0.
+# Natural products from COCONUT 2.0, November 2026 release.
+# 738,793 rows, 738,767 unique after canonicalisation.
+#
+# The revised plan cites 695,133 from the 2024 paper. The database grew between
+# the paper and this release. Both are right about different versions.
+#
+# Heterogeneous, and we do not filter it. 23 percent scores below zero on
+# NP-likeness and losartan, clonidine and thiopental are all present, but neither
+# annotation_level nor the score separates them from quinine and caffeine.
+# docs/corpora.md has the numbers. Filtering on a rule that misclassifies
+# caffeine would damage the corpus in an unknown direction.
+#
+# NaFM pretrained on about 0.6 million COCONUT molecules, so the database is
+# established at this scale. CC0 licensed.
 name: coconut
-source: data/raw/coconut/coconut.csv
+source: data/raw/coconut/coconut_csv_lite-11-2026.csv
+format: csv
 smiles_column: canonical_smiles
-size: 100000
-seed: 0
-exclude:
-  - data/raw/tasks/example_task.csv
+reference: https://coconut.naturalproducts.net
+# CheMeleon cleaned its own corpus this way. We match it so the corpora differ in
+# composition and not in how they were filtered. It costs COCONUT 8.8 percent,
+# against three molecules of PubChem, which is itself a compositional fact.
+clean:
+  max_smiles_length: 150
+  drop_multifragment: true
