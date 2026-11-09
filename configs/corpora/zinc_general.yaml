@@ -7,13 +7,27 @@
 #
 # Drawn by scripts/sample_zinc.py as a cluster sample over the whole
 # haydn-jones/ZINC20 upload: 250 shards of 787 drawn at random, two row groups of
-# a thousand molecules from each. An earlier pool of six whole shards was
-# discarded, it was blocked by tranche and its half-sample molecular weight means
-# differed by 51.4 Da. This draw differs by about 2.
+# a thousand molecules from each.
+#
+# An earlier pool of six whole shards was discarded. The upload is blocked by
+# tranche at shard level so six shards are six property ranges: their means
+# span about 50 Da and together they average 328.5, where this draw gives 343.1.
+# That 15 Da gap is the bias. An earlier note here cited a half-sample agreement
+# statistic instead, which measured nothing and has been withdrawn.
+#
+# This is a cluster sample and not half a million independent molecules. The
+# manifest records a design effect of 237 for the mean molecular weight, which
+# leaves about 2,109 molecules' worth of information in 499,998 rows.
+#
+# That factor belongs to that statistic and to no other. The same calculation on
+# the natural-product-likeness decile cutoff, which is what zinc_nplike is
+# defined by, gives 83. Recompute it, or bootstrap over shards, for anything
+# else.
 #
 # The population is the HuggingFace upload, not ZINC20 itself. Nobody has checked
 # the upload against a UCSF export. See data/raw/zinc/zinc20_spread.manifest.json.
 name: zinc_general
+population_sampled: true
 source: data/raw/zinc/zinc20_spread.csv
 format: csv
 smiles_column: smiles
