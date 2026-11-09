@@ -14,13 +14,31 @@ name: stage_a_corpora
 stage: A
 corpora: [zinc_general, coconut, zinc_nplike, pubchem]
 tasks: [bbbp, esol]
-# Pairwise similarity is quadratic, so the corpora are subsampled before it.
-# 20,000 is what the plan's Mordred budget assumes for this stage.
+# 20,000 per corpus. An earlier comment here justified it by the plan's Mordred
+# budget, which is not a thing: Stage A computes no descriptors and the plan
+# names no such size.
+#
+# The real reasons. It is large enough that the property effect sizes are tight,
+# with bootstrap intervals of 0.03 to 0.06 on a Cohen's d around 2. It is small
+# enough that the quadratic blocks can subsample from it and that exact-match
+# exposure stays in the range a real pretraining arm would carry. And it is the
+# order of the smallest sizes Stage D would run, so the redundancy and proximity
+# numbers describe something an arm would actually see.
+#
+# Scaffold counts and sphere coverage grow with this number by construction, so
+# they compare across the rows of one table and not against another size.
 sizes: [20000]
 seeds: [0]
+# What the three Stage A scripts write. Nothing reads this list, it is here so
+# the config says what the stage is for.
 outputs:
-  - descriptive_stats      # MW, logP, rings, TPSA, fraction sp3, per corpus
-  - scaffold_overlap       # Bemis-Murcko overlap between every pair of corpora
+  - descriptive_stats      # 17 descriptors per corpus, natural-product-likeness among them
+  - property_effects       # Cohen's d, Cliff's delta and overlap for every pair
+  - scaffold_overlap       # Bemis-Murcko, as set Jaccard and weighted by molecules
+  - diversity              # internal similarity and sphere coverage at two radii
   - similarity_matrix      # corpus-to-corpus nearest-neighbour Tanimoto
-  - task_distance          # each task's distance to each corpus; drives Stage B
+  - task_exposure          # benchmark structures inside each corpus, raw and cleaned
+  - task_distance          # each task molecule's distance to each corpus at this size
+  - reference_distance     # the same against the whole pools, which is Stage B's x-axis
+  - pathway_structure      # an appendix: where each corpus falls in NPClassifier's classes
   - embedding              # t-SNE of corpora plus task molecules, one figure
