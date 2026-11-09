@@ -9,10 +9,16 @@
 # L40S on purpose. A 12.9M-parameter model at batch 128 fits many times over in
 # 44 GB, and the H200 and B200 queues are contended by jobs that need the memory.
 # Featurization runs on the CPU, so ask for cores rather than a second GPU.
+#
+# Eight cores, not sixteen. Measured: the dataloader runs four workers, and the
+# per-user caps are 2 GPUs with 32 cores on mit_normal_gpu and 4 GPUs on
+# mit_preemptable, so the GPU count binds first on both. Sixteen cores reached
+# the mit_normal_gpu core cap at the same instant as the GPU cap, buying no
+# throughput and holding twelve cores other people could use.
 #SBATCH -J nc-pretrain
 #SBATCH -p mit_normal_gpu
 #SBATCH --gres=gpu:l40s:1
-#SBATCH -c 16
+#SBATCH -c 8
 #SBATCH --mem=64G
 #SBATCH --time=06:00:00
 #SBATCH -o runs/slurm/%x-%j.out

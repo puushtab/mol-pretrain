@@ -99,7 +99,10 @@ def guard_stale_checkpoints(run_dir: Path, digest: str, fresh: bool) -> None:
                 "targets have changed. Re-run with --fresh to discard them and start over."
             )
         shutil.rmtree(checkpoints)
-        print(f"discarded {len(existing)} checkpoint(s) trained on different inputs")
+        print(
+            f"discarded {len(existing)} checkpoint(s) trained on different inputs",
+            flush=True,
+        )
 
     record.write_text(digest + "\n")
 
@@ -163,7 +166,11 @@ def main() -> None:
         str(run_dir.resolve()),
         str(smiles_file.resolve()),
     ]
-    print(" ".join(command))
+    # Flushed, because this process writes nothing else until the child exits.
+    # Without it the launcher's decisions — which checkpoints it discarded, what
+    # it is about to run — sit in a buffer for the length of the run, which on a
+    # sixteen-hour condition means the log cannot answer what the job did.
+    print(" ".join(command), flush=True)
     result = subprocess.run(command, cwd=run_dir, check=False)
     raise SystemExit(result.returncode)
 
