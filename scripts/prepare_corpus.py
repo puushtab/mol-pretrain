@@ -16,13 +16,18 @@ checkpoint did not remove it and Stage C compares against that checkpoint.
 Pass --exclude-benchmarks to remove it instead. The count lands in the stats
 either way, so a sensitivity analysis needs no rerun to know its size.
 
-That flag writes to `<run_id>_noleak.csv` and never touches the ordinary arm.
-It used to write to `<run_id>.csv`, which looked harmless and was not: removing
-molecules changes the pool length, so it changes the permutation, so the file
-holds a different population under the same name. A condition whose descriptors
-and checkpoint were already computed would silently stop matching its own
-corpus file, and `compute_descriptors.py` skips shards it has already done, so
-nothing would complain.
+That flag writes the draw as a corpus of its own, `<corpus>_noleak_nSIZE_sSEED`,
+and never touches the ordinary arm. It used to write over `<run_id>.csv`, which
+looked harmless and was not: removing molecules changes the pool length, so it
+changes the permutation, so the file holds a different population under the same
+name. A condition whose descriptors and checkpoint were already computed would
+silently stop matching its own corpus file, and `compute_descriptors.py` skips
+shards it has already done, so nothing would complain.
+
+Naming it as a corpus rather than suffixing the run id keeps every downstream
+tool working as it is. `pretrain.py pubchem_noleak 100000 0` and
+`compute_descriptors.py data/processed/corpora/pubchem_noleak_n100000_s0.csv`
+need no special case.
 """
 
 from __future__ import annotations
@@ -76,6 +81,17 @@ def benchmark_molecules(task_names: list[str]) -> set[str]:
 
 
 def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: bool) -> None:
+    # The exclusion itself lives under `if task_names` below, while the name
+    # does not, so without a task this would write an untouched draw under the
+    # _noleak name: a sensitivity arm that excluded nothing and says otherwise.
+    # The --experiment form inherits its tasks from the config and never hits
+    # this, which is exactly what makes it easy to miss.
+    if exclude and not task_names:
+        raise SystemExit(
+            "--exclude-benchmarks needs at least one --task, otherwise there is nothing "
+            "to exclude and the corpus would be the ordinary arm under a _noleak name.\n"
+            "Pass --task bbbp --task esol, or use --experiment, which takes them from the config."
+        )
     stats: dict = {"corpus": cfg["name"], **condition_dict(condition)}
 
     frame = load(resolve(cfg))
@@ -120,11 +136,21 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     # is an independent sample. Writing both under one name would silently
     # replace one population with the other, and the sensitivity check would
     # then confound exclusion with resampling.
-    name = condition.run_id + ("_noleak" if exclude else "")
-    sample.select("smiles").write_csv(out_dir / f"{name}.csv")
-    sample.select(["smiles", "source_row"]).write_parquet(out_dir / f"{name}.provenance.parquet")
-    (out_dir / f"{name}.stats.json").write_text(json.dumps(stats, indent=2) + "\n")
-    print(f"  {name}: {stats['final']} molecules")
+    #
+    # The suffix goes on the corpus, not on the run id. Every tool downstream
+    # composes its own id as corpus_nSIZE_sSEED, so a suffix after the seed
+    # produces a file that pretrain.py cannot name and compute_descriptors.py
+    # has to be pointed at by hand. As a corpus it simply becomes another
+    # condition: `pretrain.py pubchem_noleak 100000 0` works unchanged.
+    written = Condition(
+        condition.corpus + ("_noleak" if exclude else ""), condition.size, condition.seed
+    )
+    sample.select("smiles").write_csv(out_dir / written.corpus_file)
+    sample.select(["smiles", "source_row"]).write_parquet(
+        out_dir / f"{written.run_id}.provenance.parquet"
+    )
+    (out_dir / f"{written.run_id}.stats.json").write_text(json.dumps(stats, indent=2) + "\n")
+    print(f"  {written.run_id}: {stats['final']} molecules")
 
 
 def main() -> None:
@@ -137,9 +163,9 @@ def main() -> None:
     parser.add_argument(
         "--exclude-benchmarks",
         action="store_true",
-        help="drop the benchmark molecules and write to <run_id>_noleak.csv, "
-        "leaving the ordinary arm's files alone. Point compute_descriptors.py "
-        "and pretrain.py at that name for the sensitivity run.",
+        help="drop the benchmark molecules and write the draw as its own corpus, "
+        "<corpus>_noleak_nSIZE_sSEED, leaving the ordinary arm alone. Describe and "
+        "pretrain it exactly like any other condition.",
     )
     args = parser.parse_args()
     ensure_dirs()

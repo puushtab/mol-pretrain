@@ -50,10 +50,26 @@ does. If the two runs agree, exposure is not driving the curve.
 That rerun is a separate condition, not the same one minus a few molecules.
 Removing molecules changes the pool length, so it changes the permutation and
 the draw is independent. `prepare_corpus.py --exclude-benchmarks` therefore
-writes `<run_id>_noleak.csv` and leaves the ordinary arm untouched. Describe and
-pretrain against that name. An earlier version wrote over the ordinary arm,
-which would have left a finished condition's descriptors and checkpoint pointing
-at a corpus file that no longer held the same molecules.
+writes it as a corpus of its own, `<corpus>_noleak`, and leaves the ordinary arm
+untouched. Everything downstream then treats it as an ordinary condition:
+
+```bash
+uv run python scripts/prepare_corpus.py configs/corpora/pubchem.yaml --size 100000 --seed 0 \
+    --task bbbp --task esol --exclude-benchmarks
+uv run python scripts/compute_descriptors.py data/processed/corpora/pubchem_noleak_n100000_s0.csv --finalize --reference pubchem_n100000_s0
+uv run python scripts/pretrain.py pubchem_noleak 100000 0
+```
+
+One condition, not the whole curve. `--experiment` would draw all fourteen and
+the check only needs the largest completed size, where exposure is highest. The
+tasks are named explicitly because without one there is nothing to exclude, and
+the script refuses rather than writing the ordinary arm under the other name.
+
+The reference stays the ordinary condition, since the standardisation vectors
+have to be the curve's own or the sensitivity arm compares against nothing. An
+earlier version wrote over the ordinary arm, which would have left a finished
+condition's descriptors and checkpoint pointing at a corpus file that no longer
+held the same molecules.
 
 Stage D is a different and worse problem. Measured over the full cached corpora,
 7 November 2026:
