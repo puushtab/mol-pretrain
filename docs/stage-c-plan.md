@@ -305,8 +305,20 @@ undefined everywhere, 10 are defined for exactly one molecule and 117 are
 constant; the first two give an undefined variance and the third gives zero, so
 dividing targets by them yields NaN or infinity. Those columns are neutralised
 to mean 0 and variance 1, which passes them through untouched, and the counts
-are recorded so the objective's real width — 1,416 usable targets — is known
-rather than assumed.
+are recorded so the objective's real width is known rather than assumed.
+
+Those three counts are what the 500-molecule condition would give if it were
+standardised against itself, leaving 1,416 usable targets, and they are the
+argument for not doing that. The frozen objective, measured once the
+preparation job had finalised all fourteen conditions against
+`pubchem_n100000_s0`, is **1,562 usable targets of Mordred's 1,613** — the
+width every point on the curve now trains against, from 500 molecules to
+100,000. Verified rather than assumed: all fourteen conditions carry
+byte-identical means and variances, every one records
+`standardised_against: pubchem_n100000_s0`, and no variance is zero or
+non-finite. Had each condition standardised against itself, the smallest would
+have fit 1,416 targets and the largest 1,562, and the curve would have
+measured the objective widening at the same time as the corpus growing.
 
 **B3, resumption.** Verified end to end rather than argued for. Job 28371249
 ran the pilot with a three-minute wall and a 30-second checkpoint interval and
@@ -346,3 +358,13 @@ killed costs one shard of at most 10,000 molecules, about four minutes. The job
 now asks for 16 cores and 4 hours across both partitions with `--requeue`,
 sized from the Stage A rate of roughly 45 molecules a second on 8 cores, which
 puts the whole 383,000-molecule curve near 2.4 CPU-hours.
+
+**Outcome.** Job 28373122 started the moment it was submitted rather than at
+the estimated 21:10, and finished all fourteen conditions in 1:30:13 with zero
+failed steps. It reused the eight descriptor shards an earlier preempted job
+had already written, which is the shard-level idempotency paying for itself;
+that reuse was checked rather than trusted, by recomputing Mordred for two
+molecules inside completed shards and confirming they reproduce the stored rows
+exactly. Describing scaled as expected with size: the 100,000-molecule
+conditions took about 9 and 29 minutes, the 50,000 ones 14 minutes each, and
+everything at 10,000 and below finished in under three minutes apiece.

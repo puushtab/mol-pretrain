@@ -42,5 +42,5 @@ print('torch', torch.__version__, '| cuda', torch.cuda.is_available(),
 "
 
 echo "== $(date '+%H:%M:%S') pretraining $1 n=$2 seed=$3"
-"$PY" scripts/pretrain.py "$1" "$2" "$3"
+"$PY" scripts/pretrain.py "$@"
 echo "== $(date '+%H:%M:%S') done"
