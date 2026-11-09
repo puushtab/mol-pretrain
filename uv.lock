@@ -1299,6 +1299,7 @@ dependencies = [
 analysis = [
     { name = "jupyterlab" },
     { name = "matplotlib" },
+    { name = "pyarrow" },
     { name = "seaborn" },
     { name = "umap-learn" },
 ]
@@ -1339,6 +1340,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2,<3" },
     { name = "polars", marker = "extra == 'descriptors'", specifier = ">=1.17,<3" },
     { name = "polars", marker = "extra == 'train'", specifier = ">=1.17,<3" },
+    { name = "pyarrow", marker = "extra == 'analysis'", specifier = ">=17,<18" },
     { name = "pyarrow", marker = "extra == 'train'", specifier = ">=17,<18" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdkit", specifier = "==2024.9.6" },
