@@ -1,4 +1,4 @@
-.PHONY: setup setup-train data zinc verify-data caches stage-a lint format test hooks clean
+.PHONY: setup setup-train data zinc verify-data caches stage-a stage-b lint format test hooks clean
 
 # Everything Stage A needs and nothing it does not. No torch.
 #
@@ -42,6 +42,20 @@ stage-a:
 	uv run python scripts/corpus_report.py configs/experiments/stage_a_corpora.yaml
 	uv run python scripts/analyze_corpora.py configs/experiments/stage_a_corpora.yaml
 	uv run python scripts/pathway_structure.py configs/experiments/stage_a_corpora.yaml
+
+# Stage B end to end. The released checkpoint against both baselines, both
+# tasks, five splits, four label counts. 200 cells, 160 of them neural. Needs
+# a GPU for the four neural arms, and no pretraining, so it does not wait on Stage C.
+stage-b:
+	for task in bbbp esol; do \
+	    for init in released scratch chemprop; do \
+	        uv run python scripts/finetune.py configs/tasks/$$task.yaml --init $$init; \
+	    done; \
+	    uv run python scripts/finetune.py configs/tasks/$$task.yaml --init chemprop --descriptors; \
+	    uv run python scripts/baseline_forest.py configs/tasks/$$task.yaml; \
+	done
+	uv run python scripts/evaluate.py runs/finetune --baseline scratch
+	uv run python scripts/stage_b_proximity.py runs/finetune
 
 # The one Stage A step that runs against the whole pools rather than a
 # condition, which is why it is not in stage-a. Fingerprints about 2.2 million
