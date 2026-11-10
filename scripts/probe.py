@@ -50,8 +50,18 @@ HIDDEN, DEPTH = 2048, 6
 # one value would reward whichever arm happened to suit it. Measured on ESOL
 # with Morgan bits, alpha=1 gave RMSE 3.14 at full labels, worse than
 # predicting the training mean, so the question is not academic.
-RIDGE_ALPHAS = (0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0)
-LOGISTIC_CS = (1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0)
+#
+# Widened after the first sweep, which showed the first grids were too narrow
+# for three arms and so had produced artefacts rather than readouts. On ESOL the
+# released checkpoint chose the maximum 10,000 in 12 of its 20 cells and
+# pubchem_n100000_s1 in 10 of 20, both wanting more regularisation than they
+# were offered; on BBBP, Morgan bits chose the minimum 1e-4 in 17 of 20, wanting
+# less. A grid-pinned arm is not comparable to one that found an interior
+# optimum, so those cells were discarded rather than reported. The grids now
+# span eleven and nine orders of magnitude, and `regularisation` is recorded per
+# run so the same check can be repeated.
+RIDGE_ALPHAS = (1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6, 1e7)
+LOGISTIC_CS = (1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0)
 MORGAN_BITS, MORGAN_RADIUS = 2048, 2
 
 
