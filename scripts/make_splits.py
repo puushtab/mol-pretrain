@@ -9,6 +9,7 @@ difference between two models cannot come from a difference in the split.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import pandas as pd
 
 from natural_compounds.config import load_config
 from natural_compounds.paths import DATA_PROCESSED, resolve_source
-from natural_compounds.splits import make_split, realised_fractions
+from natural_compounds.splits import make_split, realised_fractions, splits_provenance
 
 
 def main() -> None:
@@ -37,8 +38,10 @@ def main() -> None:
     out_dir = DATA_PROCESSED / "splits" / cfg["name"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    sizes = {}
     for seed in cfg["seeds"]:
         train, val, test = make_split(smiles, cfg["split"], seed, dates)
+        sizes[str(seed)] = [len(train), len(val), len(test)]
         (out_dir / f"seed{seed}.json").write_text(
             json.dumps({"train": train, "val": val, "test": test})
         )
@@ -57,6 +60,10 @@ def main() -> None:
             f"{requested[2]:.2f}. A few scaffold groups are large enough to distort "
             f"the split; check the task before using these."
         )
+    # Splits are the one thing every arm shares, so what made them is recorded
+    # beside them. A run records the digest of these files, not of this record.
+    source_digest = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    splits_provenance(out_dir, source_digest, sizes)
     print(f"wrote {out_dir}")
 
 
