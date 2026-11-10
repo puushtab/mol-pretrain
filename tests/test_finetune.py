@@ -13,6 +13,19 @@ import pytest
 
 from natural_compounds import encoders
 
+# The budget, naming and descriptor tests below are pure numpy and keep running
+# in CI. Only the ones that actually train a model need the train extra.
+try:  # the train extra, which make setup does not install
+    import chemprop  # noqa: F401
+
+    HAS_TRAIN = True
+except ImportError:
+    HAS_TRAIN = False
+
+needs_train = pytest.mark.skipif(
+    not HAS_TRAIN, reason="needs the train extra, which make setup does not install"
+)
+
 spec = importlib.util.spec_from_file_location(
     "finetune", Path(__file__).resolve().parents[1] / "scripts" / "finetune.py"
 )
@@ -82,6 +95,7 @@ def test_a_run_id_is_split_back_into_its_condition():
     assert finetune.condition_fields("scratch", "scratch")["size"] is None
 
 
+@needs_train
 def test_the_gradient_reaches_the_encoder():
     """Fine-tuning moves the encoder. A frozen one would be the probe again."""
     from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader
@@ -99,6 +113,7 @@ def test_the_gradient_reaches_the_encoder():
     assert float(block.W_h.weight.grad.abs().sum()) > 0
 
 
+@needs_train
 @pytest.mark.parametrize("task_type", ["classification", "regression"])
 def test_a_cell_scores_every_test_molecule(task_type):
     target = LABELS if task_type == "classification" else LABELS * 2.5 - 1.0
@@ -172,6 +187,7 @@ def test_an_arm_says_when_it_carries_descriptors():
     assert finetune.arm_name("chemprop") == "chemprop"
 
 
+@needs_train
 def test_auto_never_picks_mps():
     """Lightning resolves auto to MPS on Apple silicon, and MPS is slower here.
 
@@ -190,6 +206,7 @@ def test_auto_never_picks_mps():
     assert finetune.resolve_accelerator("gpu") == "gpu"
 
 
+@needs_train
 def test_freezing_stops_the_encoder_moving_and_unfreezing_lets_it():
     from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader
 

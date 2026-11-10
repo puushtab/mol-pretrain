@@ -9,7 +9,23 @@ import pytest
 
 from natural_compounds import encoders
 
+# The tests that build an encoder need torch. The one that refuses an unknown
+# spec does not, and it keeps running in CI. importlib.util.find_spec is not
+# used here on purpose: it reports on the import system rather than on whether
+# the import actually works.
+try:  # the train extra, which make setup does not install
+    import chemprop  # noqa: F401
 
+    HAS_TRAIN = True
+except ImportError:
+    HAS_TRAIN = False
+
+needs_train = pytest.mark.skipif(
+    not HAS_TRAIN, reason="needs the train extra, which make setup does not install"
+)
+
+
+@needs_train
 def test_scratch_matches_the_released_architecture():
     # The capacity control only controls for capacity if it has the same
     # capacity. 8.71 M parameters either way.
@@ -20,6 +36,7 @@ def test_scratch_matches_the_released_architecture():
     assert scratch["encoder_params"] == released["encoder_params"]
 
 
+@needs_train
 def test_released_is_the_published_checkpoint():
     _, _, where = encoders.load("released", seed=0)
     assert where["kind"] == "released"
@@ -29,6 +46,7 @@ def test_released_is_the_published_checkpoint():
     assert len(where["checkpoint_sha256"]) == 16
 
 
+@needs_train
 def test_chemprop_baseline_is_chemprops_own_shape():
     # The practitioner line is a different model on purpose, so it is read as a
     # second baseline rather than as the capacity control.
@@ -37,6 +55,7 @@ def test_chemprop_baseline_is_chemprops_own_shape():
     assert where["encoder_params"] < 1_000_000
 
 
+@needs_train
 def test_untrained_depends_on_its_seed():
     # The probe's control defaulted to seed 0 for all five runs and so reported
     # no initialisation variance at all.

@@ -8,6 +8,12 @@ nothing in a filename or a config says which you have.
 import importlib.util
 from pathlib import Path
 
+import pytest
+
+# make setup installs descriptors and analysis, not train, so CI has no
+# chemprop. Every test in this file builds a real message-passing block.
+pytest.importorskip("chemprop", reason="needs the train extra, which make setup does not install")
+
 spec = importlib.util.spec_from_file_location(
     "check_checkpoints", Path(__file__).resolve().parents[1] / "scripts" / "check_checkpoints.py"
 )
