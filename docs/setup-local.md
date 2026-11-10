@@ -18,9 +18,13 @@ make setup && make hooks && make test
 | `analysis` | matplotlib, seaborn, umap | figures and notebooks |
 | `train` | torch, chemprop, lightning | pretraining, about 3 GB |
 
+`make setup` already installs both of the extras Stage A needs. Run them by
+hand only to change the set, and in one invocation, because `uv sync` is
+declarative and a second call with a different extra replaces the first rather
+than adding to it:
+
 ```bash
-uv sync --extra analysis        # add figures
-uv sync --extra descriptors     # add descriptor computation
+uv sync --all-groups --extra descriptors --extra analysis
 ```
 
 The laptop does not need `train`. Pretraining happens on the cluster.
@@ -42,15 +46,42 @@ chemprop itself looks for them.
 Then one cache per corpus, which is where canonicalisation happens:
 
 ```bash
+make caches
+```
+
+which is `build_cache.py --all --workers 8`. Build them one at a time only if
+you have a reason to:
+
+```bash
 uv run python scripts/build_cache.py configs/corpora/pubchem.yaml --workers 8
 uv run python scripts/build_cache.py configs/corpora/coconut.yaml --workers 8
 uv run python scripts/build_cache.py configs/corpora/zinc_general.yaml --workers 8
-uv run python scripts/build_cache.py configs/corpora/zinc_nplike.yaml --workers 8 --np-likeness
 ```
 
-PubChem takes under two minutes on eight cores. ZINC takes longer, it has 11.7
-million molecules. Add `--np-likeness` only for a corpus that filters on the
-score, since scoring costs about as much again.
+There is no line for `zinc_nplike`. It reads `zinc_general`'s cache rather than
+building one so `build_cache.py` returns early for it. Natural-product-likeness
+is scored automatically on whichever cache feeds a corpus that filters on the
+score, which is why the `zinc_general` line above costs more than the others.
+
+PubChem takes under two minutes on eight cores, COCONUT about one, ZINC about
+one plus the scoring.
+
+Then Stage A itself, which reads those caches:
+
+```bash
+make stage-a
+```
+
+About twenty minutes. It writes everything `notebooks/01_stage_a_corpora.ipynb`
+reads except one block. That block needs:
+
+```bash
+make reference-distance
+```
+
+which fingerprints the four whole pools rather than a 20,000-molecule condition,
+about 2.2 million molecules, and takes roughly half an hour. It is separate from
+`stage-a` for that reason. The notebook says so where it uses the result.
 
 ## Every session
 

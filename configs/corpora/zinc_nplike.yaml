@@ -18,6 +18,7 @@
 # ZINC", which promises more than the chemistry delivers.
 name: zinc_nplike
 cache_from: zinc_general
+population_sampled: true
 source: data/raw/zinc/zinc20_spread.csv
 format: csv
 smiles_column: smiles

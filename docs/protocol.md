@@ -47,19 +47,58 @@ one size with `--exclude-benchmarks` as a sensitivity check. The chemistry is
 held constant across that curve, so exposure and size covary but nothing else
 does. If the two runs agree, exposure is not driving the curve.
 
+That rerun is a separate condition, not the same one minus a few molecules.
+Removing molecules changes the pool length, so it changes the permutation and
+the draw is independent. `prepare_corpus.py --exclude-benchmarks` therefore
+writes it as a corpus of its own, `<corpus>_noleak`, and leaves the ordinary arm
+untouched. Everything downstream then treats it as an ordinary condition:
+
+```bash
+uv run python scripts/prepare_corpus.py configs/corpora/pubchem.yaml --size 100000 --seed 0 \
+    --task bbbp --task esol --exclude-benchmarks
+uv run python scripts/compute_descriptors.py data/processed/corpora/pubchem_noleak_n100000_s0.csv --finalize --reference pubchem_n100000_s0
+uv run python scripts/pretrain.py pubchem_noleak 100000 0
+```
+
+One condition, not the whole curve. `--experiment` would draw all fourteen and
+the check only needs the largest completed size, where exposure is highest. The
+tasks are named explicitly because without one there is nothing to exclude, and
+the script refuses rather than writing the ordinary arm under the other name.
+
+The reference stays the ordinary condition, since the standardisation vectors
+have to be the curve's own or the sensitivity arm compares against nothing. An
+earlier version wrote over the ordinary arm, which would have left a finished
+condition's descriptors and checkpoint pointing at a corpus file that no longer
+held the same molecules.
+
 Stage D is a different and worse problem. Measured over the full cached corpora,
 7 November 2026:
 
 | corpus | pool | contains BBBP | contains ESOL | expected in a 50k corpus |
 |---|---|---|---|---|
 | pubchem | 944,286 | 73.1% | 93.2% | 127 |
-| coconut | 738,767 | 36.1% | 55.6% | 85 |
-| zinc_general (earlier 11.7M download; the current 499,998-row spread sample holds 0 and 0) | 11,726,582 | 0.3% | 0.1% | 0 |
+| coconut | 670,351 cleaned | 34.6% | 55.6% | 92 |
+| zinc_general | 499,998, a sample | 0.0% | 0.0% | 0 |
 
-At matched size the three arms carry 127, 85 and zero benchmark molecules. So
+COCONUT's row is counted against its cleaned pool, which is what an arm draws
+from. Counted against the raw cache it reads 36.1 percent and 85, and that was
+the figure here until 9 November. Cleaning costs COCONUT nine percent and
+PubChem nothing so the raw count overstates COCONUT against the arm it is
+being compared with. The ZINC row is zero for our 499,998-molecule draw. An
+earlier count over a discarded 11.7-million-row pool found 0.3 and 0.1 percent.
+
+At matched size the three arms carry 127, 92 and zero benchmark molecules. So
 exposure is not a nuisance that covaries with the variable, it is part of what
 distinguishes the arms. A PubChem win would be unreadable: better chemistry, or
 127 test structures already seen?
+
+A second reason to decide this rather than drift into it. Removing the benchmark
+molecules changes the pool length so it changes the permutation and the
+excluded run is not the main run minus a few molecules. It is an independent
+draw. `prepare_corpus.py` now writes it under a `_noleak` suffix rather than
+over the main arm's files, which keeps the two populations apart on disk, but
+the comparison between them still confounds exclusion with resampling and the
+writeup has to say so.
 
 Recommendation, not yet decided. Stage D runs with `--exclude-benchmarks` on all
 three corpora. It costs nothing, it removes at most 0.25 percent of any corpus,
@@ -108,6 +147,38 @@ relates to the pre training set".
 subset drifts more than ten points from the request, which happens when a few
 scaffold groups are very large.
 
+One property of this protocol has to travel with every ESOL number. Acyclic
+molecules all carry the empty Murcko scaffold, so they are one group. In ESOL
+that group is 317 of 1,128 molecules, larger than half the test subset, so the
+balanced rule places it first and it lands in train in all five seeds. Zero
+acyclic molecules are ever scored. They are 0.75 standard deviations more
+soluble than the rest, so this is a constant shift and not noise. BBBP behaves
+the same way with its 99. A paired comparison survives it, since every arm sees
+the same split. Calling an ESOL result a statement about ESOL does not: it is a
+statement about ring-containing ESOL.
+
+## Three things that get called leakage and are not the same
+
+Stated here because the report has to keep them apart.
+
+Exposure is a benchmark molecule sitting unlabelled in the pretraining corpus.
+That is what `task_exposure` and `full_corpus_exposure` count, and it is what
+the released CheMeleon checkpoint carries: 73 percent of BBBP and 93 percent of
+ESOL are in `cleaned_pubchem_1MM.smiles`. Nothing about the label is seen.
+
+Overlap is the same molecule appearing in a benchmark's own train and test
+subsets. The frozen scaffold splits make that impossible by construction, and
+the split indices are disjoint by assertion.
+
+Label leakage is a supervised target reaching a model before it is scored on it.
+Nothing in this project does that. Pretraining is a descriptor-regression
+objective over Mordred values and never touches a benchmark label.
+
+The first is real and unequal across the Stage D arms, which is why it is
+measured per arm and per pool. It is not a reason to call any result invalid.
+Hu et al. removed downstream molecules from pretraining; CheMeleon did not, and
+Stage C compares against CheMeleon, so neither do we.
+
 ## Fine-tuning budget
 
 Identical for every condition, pretrained or not.
@@ -137,6 +208,17 @@ that seed then sees the same labelled molecules.
 Mean and standard deviation across seeds for every cell. Paired differences
 against the from-scratch baseline, not against the best other condition. A clear
 null is a result and gets reported as one.
+
+Two arms are cluster samples and the reporting has to say so. Any interval on a
+quantity involving `zinc_general` or `zinc_nplike` is bootstrapped over shards,
+not over molecules. A contrast between those two arms draws the shards once and
+applies them to both, because the arms are two filters over one draw and not two
+draws.
+
+Which reference a distance was measured against is named every time. The
+condition column in `task_proximity` is against 20,000 molecules, which is what
+a Stage D arm sees. The pool column in `reference_distance` is against the whole
+corpus, which is what the released checkpoint saw. Stage B uses the second.
 
 ## Amendments
 

@@ -453,10 +453,20 @@ hold for conditions of this size and would rise further for the full corpora.
 PubChem is nearest to both benchmarks on every statistic, COCONUT second, and
 the two ZINC arms far behind: about half of each benchmark has no neighbour
 above Tanimoto 0.3 in a 20,000-molecule ZINC condition, against one molecule in
-twenty for PubChem. This single table is the x-axis for Stage B and the binning
-variable for Stage E, and it also predicts the ordering we should expect
-downstream if transfer is driven by coverage rather than by anything specific
-to natural products.
+twenty for PubChem. That predicts the ordering we should expect downstream if
+transfer is driven by coverage rather than by anything specific to natural
+products.
+
+**Correction, 9 November.** An earlier version of this paragraph called this
+table "the x-axis for Stage B". It is not. Stage B fine-tunes the released
+checkpoint, which saw all 944,286 molecules of its corpus rather than a
+20,000-molecule condition, and nearest-neighbour similarity rises with the size
+of the reference. Measured against the whole pool, ESOL's mean is 0.976 and its
+tenth percentile is 1.000: 68 of 1,128 molecules sit below 0.9. BBBP gives 0.943
+and 303 of 2,039. So Stage B has almost no far bin to bin on. This table is the
+right reference for Stage D, where an arm really is that size.
+`scripts/reference_distance.py` writes both and `docs/open-issues.md` carries
+the consequence.
 
 ---
 
@@ -674,6 +684,14 @@ numbers.
   diversity of the sample by construction, so part of ZINC's lead on scaffold
   and sphere diversity reflects how we sampled it, not only what the library
   is. A tranche-local sample would look less diverse.
+- The same design makes the shard the sampling unit rather than the molecule,
+  which this report did not say. Measured, the design effect on the mean
+  molecular weight is 237, leaving about 2,109 molecules' worth of information
+  in 499,998 rows. A design effect belongs to one statistic: on the
+  natural-product-likeness decile cutoff it is 83. Every interval on a ZINC
+  quantity in later work is bootstrapped over shards, and a contrast between the
+  two ZINC arms draws the shards once and applies them to both, since the arms
+  are two filters over one draw.
 - Stereocentres are counted with unassigned centres included. Half of
   PubChem's counted centres are unassigned; 15 percent of COCONUT's are.
 - Morgan fingerprints as used here ignore stereochemistry, so every similarity,
