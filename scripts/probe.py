@@ -121,7 +121,10 @@ def embed(message_passing, agg, smiles: list[str], batch: int = 64) -> np.ndarra
     out = []
     with torch.no_grad():
         for item in loader:
-            bmg = item.bmg.to(device)
+            # BatchMolGraph.to moves its tensors in place and returns None,
+            # so the batch has to be used by name rather than from the call.
+            item.bmg.to(device)
+            bmg = item.bmg
             out.append(agg(message_passing(bmg), bmg.batch).cpu().numpy())
     vectors = np.concatenate(out)
     if len(vectors) != len(readable):
@@ -337,6 +340,15 @@ def main() -> None:
                         )
                         continue
 
+                    label = count if count is not None else "all"
+                    run = args.out / f"{name}__{task}__split{split_seed}__n{label}"
+                    # Six grid points per cell over seventeen arms is a few
+                    # thousand fits, which can outlast a wall. A finished cell
+                    # is left alone so a resubmitted job carries on rather than
+                    # starting the whole sweep again.
+                    if (run / "predictions.csv").exists():
+                        continue
+
                     val = np.asarray(split["val"])
                     y_true, y_pred, chosen = fit_and_score(
                         features[train],
@@ -348,8 +360,6 @@ def main() -> None:
                         cfg["task_type"],
                     )
 
-                    label = count if count is not None else "all"
-                    run = args.out / f"{name}__{task}__split{split_seed}__n{label}"
                     run.mkdir(parents=True, exist_ok=True)
                     pd.DataFrame({"y_true": y_true, "y_pred": y_pred}).to_csv(
                         run / "predictions.csv", index=False
