@@ -458,6 +458,11 @@ headline means anything.
 It costs almost nothing to fix. The arms that stop at fifteen epochs do not
 care what the cap is, and the arm that wanted sixty-five is the cheap one.
 
+> Corrected on 10 November, see Amendment 15. That last paragraph is wrong.
+> Chemprop reads its learning-rate cooldown off the cap, so an arm that stops
+> at fifteen epochs does care. The amendment is a recipe change, not extra
+> permission to train longer.
+
 ### 12. Label budgets nest. 10 November 2026
 
 The molecules drawn for one budget are a prefix of those drawn for the next, so
@@ -540,3 +545,106 @@ enumeration now runs over half the patterns and doubles, using the pairing
 above rather than trusting arithmetic to reproduce it, and the unflipped
 pattern is counted by construction. The sampled branch, for more clusters than
 we have, uses (1 + extreme) / (1 + B).
+
+> Corrected on 10 November, see Amendment 15. The claim that the five
+> per-split slopes are independent by construction is false, so `p_im` is
+> demoted from test of record to diagnostic.
+
+
+### 15. Three corrections after the campaign. 10 November 2026
+
+Written after all 200 cells were on disk and after an independent read of the
+repository. Each item below is a statement this document made that is wrong, or
+a measurement whose name promised more than it delivers. None of them changes a
+single prediction. The 200 cells stand as they were run.
+
+**The five per-split slopes are not independent.** Amendment 14 justified
+`p_im` by saying no molecule and no trained pair crosses a split. That is
+false, and it is checkable in one pass over the frozen split files.
+
+| task | test observations | distinct molecules | molecules in more than one test set | test rows that train another split |
+|---|---:|---:|---:|---:|
+| BBBP | 1,025 | 807 | 197 | 3,276 |
+| ESOL | 570 | 381 | 163 | 1,333 |
+
+These are scaffold splits under five seeds, not a partition. A molecule held
+out at seed 0 can be trained on at seed 3, and roughly a quarter of the test
+molecules are scored more than once. Ibragimov and Mueller need approximately
+independent group estimators. Ours are positively correlated, so the t test
+understates its own standard error and errs towards rejecting.
+
+The direction is what saves the reported result rather than the method. Our
+primary cell returns p_im 0.88 against a test that is too eager to reject, so
+the null is not an artefact of a weak test.
+
+**`p_im` is demoted to a diagnostic.** The inference of record is the interval,
+clustered on the molecule, which was always the primary and which absorbs this
+overlap by construction. Every observation of one molecule lands in one
+cluster, whatever split produced it, so repeated scoring is handled rather than
+assumed away. BBBP has 807 clusters and 699 effective. The two split-level
+p-values stay printed beside it as checks on split-level shocks, both now
+labelled as what they are.
+
+Nothing here is a new method. One number is relabelled and one sentence is
+withdrawn.
+
+**The epoch cap changed the optimiser, not just the stopping rule.** Amendment
+13 said the arms that stop at fifteen epochs do not care what the cap is.
+Chemprop builds its learning-rate schedule in `configure_optimizers` with
+`cooldown_epochs = trainer.max_epochs - warmup_epochs`, and the decay is
+geometric over that span. So the cap sets the decay rate for every arm from the
+first epoch after warmup.
+
+| epoch | learning rate, cap 50 | cap 200 | ratio |
+|---:|---:|---:|---:|
+| 11 | 6.5e-4 | 9.0e-4 | 1.4 |
+| 18 | 4.6e-4 | 8.3e-4 | 1.8 |
+| 27 | 3.0e-4 | 7.5e-4 | 2.5 |
+| 55 | 7.9e-5 | 5.4e-4 | 6.9 |
+
+Our arms stop between 11 and 62 epochs, so this is the range that matters and
+the factor is between one and a half and seven. Raising the cap was a recipe
+change.
+
+The campaign is still internally valid, because all 160 neural cells ran at
+200. Every arm sits on one schedule and the paired difference is between arms
+on that schedule. What is not valid is comparing any of these numbers to a cell
+run at 50, and the earlier claim that the change was free.
+
+We are not rerunning anything to establish which recipe is better. That is a
+tuning question and this project does not tune.
+
+**Corpus membership is an upper bound on pretraining exposure.** `in_pool` says
+a benchmark molecule's canonical structure appears in the published PubChem
+file. CheMeleon's reference pretrainer splits that file 70/20/10 with
+`torch.Generator().manual_seed(1701)`, so a member was trained on with
+probability about 0.7, influenced only checkpoint selection with probability
+0.2, and was held out with probability 0.1.
+
+The primary analysis does not use `in_pool`. It regresses the gain on
+similarity to the corpus, and a random partition is random with respect to
+structure, so the corpus a molecule is near is the same corpus either way. The
+exposed-against-unexposed contrast does use it, and that contrast was already
+exploratory.
+
+The split is reconstructible, and we ran it once as a check rather than as
+protocol. Of BBBP's 573 scored molecules that match the pool, 425 fall in the
+reconstructed training partition. Redoing the contrast on that split rather
+than on membership leaves every BBBP interval covering zero, as before, and
+narrows them, because the held-out pool members move into the comparison group
+and balance it. On ESOL the membership contrast at 100 labels is about twice
+the size of the reconstructed-exposure one, which is what confounding looks
+like.
+
+That check rests on assumptions we cannot verify: that the released checkpoint
+came from this script, this seed, this file in this order, and a torch whose
+`randperm` matches ours. So it stays out of the protocol. What enters the
+protocol is the honest name. `in_pool` is membership of the published corpus,
+not verified gradient exposure.
+
+**The primary flag ignored the arm pair.** `primary` was true for BBBP at all
+labels on the corpus axis, adjusted, whatever arms were being compared. A
+descriptor-against-chemprop run therefore marked a row primary, which hands a
+confirmatory label to a comparison nobody pre-specified. The test now names
+released against scratch. The affected output was a pipeline check and not a
+result, and it has been regenerated.
