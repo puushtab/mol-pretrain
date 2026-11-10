@@ -13,6 +13,13 @@ Nothing in the pool scores below 1.0, so the fingerprint is an upper bound and
 this file is the thing itself. Stage B's exposed-against-unexposed contrast
 keys on this column rather than on the similarity.
 
+`in_pool` is membership of the published corpus. It is not the same thing as
+the encoder having taken a gradient step on the molecule. CheMeleon's reference
+pretrainer splits its SMILES file 70/20/10 with a fixed seed, so roughly seven
+in ten pool members were trained on, two in ten only steered checkpoint
+selection, and one in ten was held out. Full-pool membership is an upper bound
+on gradient exposure. See Amendment 15.
+
 Cheap: one cache read per corpus, then a canonicalisation per benchmark row.
 Separate from reference_distance.py so it does not force a rerun of the two
 million fingerprints that script computes.
@@ -24,6 +31,7 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
 from natural_compounds.cache import apply_clean, load, resolve
 from natural_compounds.chem import canonicalize
@@ -59,7 +67,18 @@ def main() -> None:
     for name in corpora:
         cfg = load_config(CONFIGS / "corpora" / f"{name}.yaml")
         try:
-            pool = set(apply_clean(load(resolve(cfg)), cfg.get("clean"))["smiles"].to_list())
+            frame = apply_clean(load(resolve(cfg)), cfg.get("clean"))
+            # The same filter reference_distance.py applies. Without it
+            # zinc_nplike was tested against the whole ZINC sample rather than
+            # the decile an arm could be drawn from. Harmless while the overlap
+            # is zero, wrong the moment it is not.
+            quantile = (cfg.get("filter") or {}).get("np_likeness_top_quantile")
+            if quantile is not None:
+                scored = frame.filter(pl.col("np_likeness").is_not_nan())
+                frame = scored.filter(
+                    pl.col("np_likeness") >= scored["np_likeness"].quantile(1 - quantile)
+                )
+            pool = set(frame["smiles"].to_list())
         except FileNotFoundError:
             print(f"  no cache for {name}, skipping")
             continue
