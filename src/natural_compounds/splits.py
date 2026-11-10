@@ -7,8 +7,11 @@ harder and closer to real use, random is the easy control.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import defaultdict
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -111,3 +114,61 @@ def realised_fractions(split: Split) -> tuple[float, float, float]:
     sizes = [len(subset) for subset in split]
     total = sum(sizes)
     return sizes[0] / total, sizes[1] / total, sizes[2] / total
+
+
+def label_budget(
+    train: list[int], val: list[int], count: int | None, seed: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """The labelled molecules this cell may use, drawn with the split seed.
+
+    The count is the training budget and validation shrinks with it. A cell that
+    trains on 50 labels and validates on 203 has consumed 253, so its early
+    stopping is far better informed than the regime it claims to represent. Two
+    is the floor, because a single validation molecule stops nothing.
+    """
+    rng = np.random.default_rng(seed)
+    train_idx, val_idx = np.asarray(train), np.asarray(val)
+    # One permutation per split, and every budget is a prefix of it. So the 50
+    # drawn molecules are the first 50 of the 100, which are the first 100 of
+    # the 500. Drawing each budget afresh would change which molecules as well
+    # as how many between adjacent points, and the low-label curve is where the
+    # effect is supposed to live. Stage C nests its corpus sizes for the same
+    # reason.
+    order, val_order = rng.permutation(train_idx), rng.permutation(val_idx)
+    if count is None or count >= len(order):
+        return order, val_order
+    keep = min(len(val_order), max(2, round(count * len(val_order) / len(order))))
+    return order[:count], val_order[:keep]
+
+
+def splits_fingerprint(directory: Path) -> str | None:
+    """A digest over the frozen split files themselves.
+
+    This is the one thing every arm has to share. The splits live under
+    DATA_PROCESSED, which NC_DATA_DIR moves onto scratch on the cluster, so a
+    machine that does not have them generates its own from whatever is checked
+    out there. Two arms on two machines would then be scored on different test
+    molecules while every table still printed a confident paired interval.
+
+    Hashing the files rather than the inputs that made them catches that
+    whatever the cause, a different RDKit, a different commit or a stray rerun.
+    """
+    files = sorted(directory.glob("seed*.json"))
+    if not files:
+        return None
+    running = hashlib.sha256()
+    for path in files:
+        running.update(path.name.encode())
+        running.update(path.read_bytes())
+    return running.hexdigest()[:16]
+
+
+def splits_provenance(directory: Path, source_digest: str, sizes: dict) -> dict:
+    """What produced these splits, written beside them."""
+    from natural_compounds.manifest import build_manifest_fields
+
+    record = build_manifest_fields(
+        step="make_splits", source_sha256=source_digest, realised_sizes=sizes
+    )
+    (directory / "manifest.json").write_text(json.dumps(record, indent=2) + "\n")
+    return record
