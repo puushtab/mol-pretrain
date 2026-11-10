@@ -6,21 +6,21 @@ Check-in 2 status page.
 ## 1. The short version
 
 Pretraining is nearly finished and far ahead of schedule. Evaluation has not
-started, and it is now the only thing on the critical path. Twelve of the
+started, and it is now the only thing on the critical path. Thirteen of the
 fourteen Stage C checkpoints exist; none of them has yet produced a number that
-can be compared to anything published, and none can until the fine-tuning loop
-is written.
+can be compared to anything published, and none can until something attaches a
+task head and trains it on labelled data.
 
 | track | plan said | actual | status |
 |---|---|---|---|
 | Pretraining, 500 to 50k | submitted Wed 12 to Fri 14 Nov | all twelve done by 12:24 on Sun 9 Nov | about five days ahead |
-| Pretraining, 100k | decide Mon 17, land Tue 18 to Fri 21 | both running, ~70% through | about nine days ahead |
+| Pretraining, 100k | decide Mon 17, land Tue 18 to Fri 21 | seed 1 done, seed 0 at epoch 262 | about nine days ahead |
 | Fine-tuning loop (B2) | start Mon 10 Nov, first numbers Wed 12 | not started | **on schedule, not late** |
 | Baselines, scratch and released | Thu 13 Nov | not started | blocked on B2 |
 | Curve figure | Mon 17 Nov, Check-in 2 | not started | blocked on B2 |
 
-68.9 GPU-hours consumed so far, against the 61 to 102 projected for the whole
-curve. The budget is holding.
+About 65 GPU-hours consumed so far, against the 61 to 102 projected for the
+whole curve. The budget is holding.
 
 ## 2. Is the pretraining done?
 
@@ -35,16 +35,15 @@ Not quite. Twelve of fourteen conditions are complete and exported. The two
 | 10,000 | done, epoch 262 | done, epoch 289 |
 | 25,000 | done, epoch 214 | done, epoch 275 |
 | 50,000 | done, epoch 283 | done, epoch 246 |
-| 100,000 | running, at epoch 176 | running, at epoch 216 |
+| 100,000 | running, at epoch 262 | done, epoch 264 |
 
 Each finished run stopped 50 epochs after its best validation epoch, exported a
 48 MB `best.pt`, and none reached the 500-epoch cap.
 
-At the measured 260 seconds an epoch, and taking the finished runs' median stop
-near epoch 280, the 100k pair should finish this evening: seed 1 around 18:15
-and seed 0 around 21:10. If instead they run to the 500-epoch cap they finish
-midday on 10 November. Either way they are inside their 48-hour walls and nine
-days inside the 21 November hard stop.
+Seed 1 finished at epoch 264 after 19 hours 11 minutes. Seed 0 is at epoch 262
+on its third attempt, having been preempted twice, and should finish tonight on
+the same trajectory. The resume wrapper has now recovered three real
+interruptions without losing a run.
 
 ### The resume wrapper earned its keep
 
@@ -87,11 +86,12 @@ own held-out tenth:
 | 10,000 | 0.101 | 0.104 | 0.003 |
 | 25,000 | 0.089 | 0.079 | 0.010 |
 | 50,000 | 0.055 | 0.062 | 0.007 |
+| 100,000 | running | 0.043 | |
 
 Two things in it are worth noting, and one thing is not a result at all.
 
-**The objective is still improving at 50,000 molecules.** Error falls by a
-factor of five from 500 to 50,000 with no sign of flattening. **And the seed
+**The objective is still improving at 100,000 molecules.** Error falls by a
+factor of seven from 500 to 100,000 with no sign of flattening. **And the seed
 spread collapses**, from 0.152 at n=500 to a few thousandths above n=5,000:
 below a few thousand molecules, which molecules you happen to draw matters more
 than how many.
@@ -205,19 +205,84 @@ seed, which lands in G1's 30-to-60 band, whose written action is "proceed, but
 That is what was done. G3's decision point is therefore superseded rather than
 skipped, but it is a deviation and should be confirmed rather than assumed.
 
-## 7. The thing to decide now
+## 7. What to do with the pretrained models now
 
-The fine-tuning loop is the only item between twelve trained encoders and a
-result, and it is due to start tomorrow. Two questions need answers:
+Thirteen encoders are on disk. They are inert: each one ends in a 1,613-wide
+descriptor head, so none can emit a BBBP or ESOL prediction. Something has to
+attach a task head and train it on labelled data. There are two ways to do
+that, and they differ in cost by roughly a factor of fifty.
 
-1. **Is Léonard starting it tomorrow as planned?** If yes, nothing changes and
-   the schedule holds with nine days of slack on the pretraining side.
-2. **If he is blocked, who writes it?** The protocol is frozen and unambiguous,
-   so the loop is a well-specified two days of work for whoever has the time.
-   Waiting is the expensive option: every day it slips is a day the curve, the
-   baselines and the Check-in 2 figure all slip together, since they are
-   strictly downstream of it.
+### Route A — a linear probe, available today
 
-The cheapest useful thing anyone can do in the meantime is the descriptor
-baseline design (task 8b), because it is the baseline that decides whether our
-headline number means anything, and it is not yet on anyone's list.
+Freeze each encoder, push BBBP's 2,050 and ESOL's 1,128 molecules through it,
+keep the 2,048-wide vector each produces, and fit logistic regression for BBBP
+and ridge for ESOL on the frozen scaffold splits already on disk.
+
+- No GPU training: about 38,000 forward passes, then scikit-learn.
+- An hour of work, minutes of compute.
+- Produces a real AUROC and RMSE per condition, so the curve can be inspected
+  for slope tonight rather than next week.
+
+**What it is not.** Not comparable to the lecture's figures or to CheMeleon's
+paper, both of which fine-tune. Probes also tend to *understate* the pretraining
+benefit, because fine-tuning gets to adapt the encoder and a probe does not. So
+it is an addition to the frozen protocol, labelled as such in any figure it
+appears in, and not the headline result.
+
+**What it is for.** Information about the project rather than a result for the
+write-up. If the probe curve is flat from 500 to 100,000 molecules, we learn
+that before anyone spends two days on the loop, and the pivot discussion starts
+a week earlier. If it rises, we know the signal exists and roughly where it
+turns, which is exactly what Stage D needs in order to pick its operating size.
+
+A probe is also a reasonable test of the *low-label* columns specifically.
+Where the bottleneck is labelled data rather than model capacity — 50 or 100
+molecules — a frozen representation plus a linear fit is close to what a
+fine-tuned model can do anyway, so the probe's understatement is smallest
+exactly where the published effect is largest.
+
+### Route B — the fine-tuning loop, the actual deliverable
+
+`scripts/finetune.py`, written against the protocol already frozen in
+`docs/protocol.md`: at most 50 epochs, early stopping at patience 10, batch 64,
+Adam at 1e-4, no per-condition tuning, five scaffold seeds, label counts of 50,
+100, 500 and all. Chemprop's `--from-foundation` flag does the mechanical part,
+taking the encoder and discarding the descriptor head.
+
+This is blocker B2 — Léonard, two days, due to begin 10 November. It unlocks
+Stages B, C, D and E. Nothing in the write-up can come from Route A alone.
+
+### Recommendation
+
+Run the probe now and let the loop produce the numbers that go in the write-up.
+The probe costs almost nothing and it answers a question worth answering before
+the expensive work is sequenced: is there a slope at all? The two are not in
+competition — the probe reads the existing checkpoints, the loop is a separate
+script, and neither blocks the other.
+
+If the probe is run, it goes in its own script with its own output directory,
+so it cannot be mistaken for the protocol's fine-tuning path.
+
+## 8. The thing to decide now
+
+Two questions need answers, and only the second is urgent:
+
+1. **Should the probe run tonight?** It is cheap, reversible, and the only way
+   to see the curve's shape before the end of the week.
+2. **Is Léonard starting the loop tomorrow as planned?** If yes, nothing
+   changes and the schedule holds with nine days of slack on the pretraining
+   side. If he is blocked, decide tonight who writes it. Waiting is the
+   expensive option: every day it slips, the curve, the baselines and the
+   Check-in 2 figure all slip together, since all three are strictly downstream
+   of that one file.
+
+Two things that need no GPU and are not on anyone's list:
+
+- **Pin both baselines in `docs/protocol.md`** under Amendments, which
+  currently reads "None yet". The scratch baseline's architecture is
+  unspecified, and the curve floats against an arbitrary line until it is
+  fixed. Needed before task 7 runs, not after.
+- **Add the Chemprop-plus-descriptors baseline** (task 8b). Adding computed
+  descriptors to Chemprop is worth about as much as pretraining is, and since
+  CheMeleon's pretraining target *is* computed descriptors, without it a corpus
+  effect and a descriptor effect cannot be told apart.
