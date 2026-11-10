@@ -41,8 +41,14 @@ from natural_compounds.splits import label_budget, splits_fingerprint
 # to 65 epochs on BBBP at 500 labels, while the released checkpoint stops at 15
 # and the untrained 2048-wide control at 18. A cap of 50 therefore truncated the
 # practitioner baseline and left the pretrained arm untouched, which biases the
-# comparison in favour of pretraining. 200 is three times the worst observed and
-# costs the fast arms nothing.
+# comparison in favour of pretraining. 200 is three times the worst observed.
+#
+# It does not cost the fast arms nothing, which this comment used to claim.
+# Chemprop sets its cooldown from trainer.max_epochs, so the learning rate
+# decays over 198 epochs rather than 48 and every arm sits higher at any given
+# epoch. Raising the cap is a recipe change and not extra permission to train
+# longer. All 160 neural cells of Stage B ran at 200, so the campaign is
+# internally consistent. It is not comparable to anything run at 50.
 MAX_EPOCHS, PATIENCE, BATCH = 200, 10, 64
 # Chemprop's own schedule. The protocol says "Adam, learning rate 1e-4", which
 # are chemprop's init_lr and final_lr; the triangular rise to 1e-3 between them

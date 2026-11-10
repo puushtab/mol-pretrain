@@ -391,10 +391,21 @@ def split_level_t(
     The sign-flip test cannot return less than 2 / 2**G, so at five splits it
     stops at 0.0625 however large the effect. That floor is a property of the
     sign-flip reference distribution and not of five splits. Fitting the slope
-    separately inside each split gives estimates that are independent by
-    construction, because no molecule and no trained pair is shared across
-    splits, and a one-sample t test on them has four degrees of freedom and no
-    floor. The price is that it is conservative at the usual levels.
+    inside each split and running a one-sample t test on the five gives four
+    degrees of freedom and no floor.
+
+    An earlier version of this docstring said the five estimates are
+    independent by construction, because no molecule crosses a split. That is
+    false. These are scaffold splits under five seeds, and 197 of BBBP's 807
+    test molecules land in more than one split's test set, while 3,276 test
+    rows of one split are training rows of another. The five slopes are
+    correlated, and a t test that assumes they are not understates its own
+    standard error. It errs towards rejecting, not towards caution.
+
+    So this is a diagnostic, not the inference of record. See Amendment 15. The
+    reported interval clusters on the molecule, which absorbs the overlap by
+    construction, since every observation of one molecule lands in one cluster
+    whatever split produced it.
 
     Split fixed effects are dropped here. Inside one split they are constant.
     """
@@ -592,8 +603,14 @@ def main() -> None:
             for column in ("corpus_similarity", "train_similarity"):
                 for adjust in (False, True):
                     # The primary cell, named in the protocol before any run.
+                    # The arm pair belongs in the test. Without it a
+                    # descriptor-against-chemprop run also marked a row
+                    # primary, lending a confirmatory label to a comparison
+                    # nobody pre-specified.
                     primary = (
-                        task == "bbbp"
+                        args.arm == "released"
+                        and args.baseline == "scratch"
+                        and task == "bbbp"
                         and label == "all"
                         and column == "corpus_similarity"
                         and adjust
