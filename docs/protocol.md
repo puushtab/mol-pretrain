@@ -187,7 +187,8 @@ Identical for every condition, pretrained or not.
 
 - At most 200 epochs, early stopping on validation loss with patience 10.
   Amended on 10 November, see Amendment 13. The original 50 truncated one arm
-  and not another.
+  and not another. Amended again on 13 November, see Amendment 16: an epoch is
+  never fewer than eight optimiser steps.
 - Batch size 64, Adam, learning rate 1e-4.
 - No per-condition hyperparameter search.
 - No ensembling. One model per seed, spread reported across seeds.
@@ -206,6 +207,9 @@ around like 100". The bottom two are hers. 500 is ours.
 
 The subsample for a label count is drawn with the split seed. Every condition at
 that seed then sees the same labelled molecules.
+
+The 50 and 100 label cells were re-run under Amendment 16. Both versions are
+kept and both are reported.
 
 ## Reporting
 
@@ -648,3 +652,139 @@ descriptor-against-chemprop run therefore marked a row primary, which hands a
 confirmatory label to a comparison nobody pre-specified. The test now names
 released against scratch. The affected output was a pipeline check and not a
 result, and it has been regenerated.
+
+### 16. An epoch has a floor, and a validation draw has both classes. 13 November 2026
+
+Written after all 720 neural cells were on disk and after their test scores
+had been read. It is a post hoc change to the recipe of the 50 and 100 label
+cells, and those cells carry that label wherever they are reported.
+
+**What was wrong.** Nothing in the code. The recipe counts in epochs, and at
+batch 64 an epoch is one optimiser step at 50 labels and two at 100. Patience
+10 therefore stopped a run after ten or twenty steps, and the two warmup epochs
+were over in two or four.
+
+| | 50 labels | 100 labels | 500 labels |
+|---|---:|---:|---:|
+| optimiser steps per epoch, as run | 1 | 2 | 8 |
+
+Of the 360 cells at 50 and 100 labels, 205 restored a checkpoint taken after
+ten steps or fewer, and 28 of the 180 on BBBP score below 0.5 AUROC.
+
+The from-scratch control on ESOL at 50 labels is close to a constant predictor
+on every split, so a paired difference against it measured which arm had been
+starved least. On BBBP split 4 at 50 labels the six validation molecules are
+all positive, and the validation loss then rewards confidence and nothing else.
+Eight of those eighteen cells drove it below 1e-6, one of them to exactly
+zero, and predict exactly 1.0 for between half and nearly all of the test
+molecules. Stored float32 probabilities saturate there and elsewhere. Of the
+180 BBBP cells at 50 and 100 labels, 26 have a positive and a negative tied at
+exactly 1.0, nine on split 4 at 50 labels, sixteen on split 2 and one on
+split 1, and in sixteen of them the ties move AUROC by more than 0.05. Split 2
+validates on both classes, so (b) below does not reach those cells. (c) does.
+
+The 500 label and all label cells show none of this.
+
+**(a) An epoch is at least eight optimiser steps.** An epoch is the smallest
+whole number of passes over the training draw that gives at least
+ceil(500 / 64) = 8 steps. Everything the budget counts in epochs is counted in
+these: two of warmup, patience ten, the cap of two hundred, validation and
+checkpoint once per epoch, chemprop's cooldown, and Amendment 11's freeze.
+Nothing else moves. Batch 64, shuffled without replacement within a pass, Adam,
+1e-4 to 1e-3 to 1e-4, early stopping on validation loss, the best checkpoint
+restored, the same seeds.
+
+| | 50 labels | 100 labels | 500 labels | all, ESOL | all, BBBP |
+|---|---:|---:|---:|---:|---:|
+| passes per epoch | 8 | 4 | 1 | 1 | 1 |
+| steps per epoch | 8 | 8 | 8 | 15 | 26 |
+| warmup, steps | 16 | 16 | 16 | 30 | 52 |
+| patience, steps | 80 | 80 | 80 | 150 | 260 |
+| cap, steps | 1,600 | 1,600 | 1,600 | 3,000 | 5,200 |
+| patience, passes over the data | 80 | 40 | 10 | 10 | 10 |
+| cap, passes over the data | 1,600 | 800 | 200 | 200 | 200 |
+
+The last two rows are there so nobody has to work them out. The words of the
+budget are unchanged and what they mean in passes over fifty molecules is not.
+
+Eight is not a free choice. Any floor above eight would change the 500 label
+cells, which stand, and eight is the only value at which the three subsampled
+budgets share one recipe step for step: the same learning rate at every step,
+the same sixteen steps of warmup, the same eighty of patience. That is
+Amendment 12's argument applied to the optimiser. A curve should vary in one
+thing. No other value was run and none will be.
+
+The rule is stated for every cell and is the identity wherever a pass already
+holds eight steps, which is at 500 labels and at all of them.
+
+**(b) A validation draw holds both classes.** The draw is still the prefix of
+the split's validation permutation, at the size Amendment 3 fixes. On a
+classification task, if that prefix holds one class its last slot goes instead
+to the first later molecule of the same permutation that carries the other. No
+new random number is drawn and the training draw is not touched. If the whole
+validation split holds one class the cell is not run.
+
+Checked on all forty draws, two tasks by five seeds by four budgets. Every
+training draw is identical to what ran. One validation draw changes: BBBP,
+seed 4, 50 labels, where row 1343 gives way to row 811 and six positives become
+five and one. Row 811 is the eighth of the permutation, inside the twelve drawn
+at 100 labels, so the budgets still nest. The forest takes the same draw, as
+Amendment 10 requires.
+
+Finding the replacement reads the labels of molecules later in the permutation
+than the ones drawn. They are validation labels and the cell does not train on
+them, but it is not nothing and it is said here.
+
+**(c) AUROC is scored on the logit.** A classification cell stores the output
+before the sigmoid as `y_logit`, beside `y_pred`, and ranking metrics are
+computed on it where the column exists. The order is the same and there is no
+ceiling to tie against.
+
+**(d) What is re-run, and where it goes.** The 360 neural cells at 50 and 100
+labels, eighteen arms by two tasks by five splits by two budgets, and the
+twenty forest cells at those budgets. They are written to `runs/finetune_a16/`.
+Nothing under `runs/finetune/` is moved or deleted. The cells there at 50 and
+100 labels remain as the recipe that was registered, and are reported beside
+the new ones as that and not as measurements of the encoder. The 380 cells at
+500 labels and at all of them are not re-run.
+
+Eighty of the 360 belong to Stage B's four arms. Amendment 15 said those cells
+stand as they were run. For the 50 and 100 label cells that sentence is
+superseded, and any Stage B statement that rests on one is regenerated and
+shown in both versions. No all label cell, which is where both stages' primary
+comparisons sit, is touched.
+
+**(e) What we commit to.** No cell is excluded on its result. The low label
+recipe is not amended again whatever the re-run shows. If these cells are still
+uninformative they are reported as uninformative. Each new manifest records
+passes per epoch, steps run, the step of the restored checkpoint, the classes
+in its validation draw and whether the draw was repaired. The share of cells
+restored from the first look at validation, step 8, and the number that reach
+the cap are reported and not acted on.
+
+The tree was not clean when these cells ran, as it was not for the first 720,
+so a commit hash does not say which code produced them. Each new manifest
+therefore carries a digest of `scripts/finetune.py`,
+`src/natural_compounds/splits.py` and `src/natural_compounds/encoders.py`,
+taken when the job loaded them. A forest manifest records the amendment,
+whether its draw was repaired, and a digest of `scripts/baseline_forest.py` and
+`src/natural_compounds/splits.py`. It has no epochs, steps or checkpoint to
+record.
+
+**What this does not fix, and what a reader can fairly hold against it.**
+
+- It is post hoc and cannot be made otherwise. The defence is that the rule has
+  no tunable value, not that it was written blind.
+- The anchor was chosen knowing that eight-step epochs behave at 500 labels.
+- The direction of any bias is unknown rather than zero. The old recipe starved
+  every arm and nobody knows which it starved most.
+- Validation is still six or twelve molecules, and five of the ten low label
+  BBBP draws hold a single negative. The amendment removes the degenerate case
+  and leaves the weak one. A reader may conclude the 50 label BBBP cells still
+  measure validation luck as much as the encoder.
+- The first checkpoint that can be restored is at step 8. An encoder that fits
+  fifty molecules in fewer steps has its best model before the first look.
+- At 50 labels training is full-batch descent on one batch of fifty. The three
+  subsampled budgets now match in steps. They do not match in gradient noise or
+  in passes over the data.
+- Five splits. None of this adds power.
