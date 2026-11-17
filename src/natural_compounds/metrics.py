@@ -17,6 +17,23 @@ METRICS = {
 }
 
 
+# Metrics that read only the order of the predictions.
+RANKING = {"auroc", "auprc"}
+
+
+def scored_column(columns, metric: str) -> str:
+    """Which column of predictions.csv a metric is computed on.
+
+    A probability stored in float32 reaches exactly 1.0 from a logit of about
+    17, and every molecule past that point is tied with every other. A ranking
+    metric then scores positives against negatives it can no longer tell apart.
+    Cells written since Amendment 16 carry the pre-sigmoid `y_logit`, which has
+    the same order and no ceiling, so a ranking metric reads that where it
+    exists. Everything else, and every older cell, reads `y_pred`.
+    """
+    return "y_logit" if metric in RANKING and "y_logit" in columns else "y_pred"
+
+
 def score(y_true: np.ndarray, y_pred: np.ndarray, metric: str) -> float:
     if metric not in METRICS:
         raise KeyError(f"unknown metric {metric!r}; choose from {sorted(METRICS)}")

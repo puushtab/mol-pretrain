@@ -214,22 +214,46 @@ def clean(features: np.ndarray) -> np.ndarray:
     return filled[:, varying] if varying.any() else filled
 
 
+def clip_bound(n_train: int) -> float:
+    """The largest |z| a training molecule can have on any feature.
+
+    With n values standardised by their own mean and population SD, no value
+    can sit further than sqrt(n - 1) SDs from the mean (Samuelson's
+    inequality); the extreme is a feature that is constant on all but one
+    molecule. Clipping there never alters a training value.
+    """
+    return float(np.sqrt(max(n_train - 1, 1)))
+
+
 def fit_and_score(
-    train_x, train_y, val_x, val_y, test_x, test_y, kind: str
+    train_x, train_y, val_x, val_y, test_x, test_y, kind: str, clip: bool = False
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Pick the regulariser on validation, then report test. Never fits on test.
 
     Returns (y_true, y_pred, chosen) so the chosen strength is recorded per run
     and a reader can see whether an arm sat at the edge of the grid, which is
     the signal that the grid was too narrow.
+
+    `clip` caps standardised features at `clip_bound`. Without it, an embedding
+    dimension that is all but dead on the training molecules has a training SD
+    near zero, and one validation or test molecule that activates it is scaled
+    to a z-score in the thousands, which a linear head turns into a prediction
+    tens of units off. On ESOL at full labels this put the released
+    checkpoint at RMSE 1.52 with a spread of 0.91 across splits; with the cap
+    it is 0.81 and 0.08. The cap is not specific to that arm: it moves 86 of
+    the 90 full-label ESOL cells, 40 of them by more than 0.02, and it acts
+    through validation as well as test, because the same molecules had been
+    steering the choice of regularisation. It was adopted after the uncapped
+    results were seen, so it is a post-hoc correction and is labelled as one.
     """
     from sklearn.linear_model import LogisticRegression, Ridge
     from sklearn.metrics import mean_squared_error, roc_auc_score
     from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
     classification = kind == "classification"
     grid = LOGISTIC_CS if classification else RIDGE_ALPHAS
+    bound = clip_bound(len(train_y))
 
     def build(strength):
         estimator = (
@@ -237,7 +261,10 @@ def fit_and_score(
             if classification
             else Ridge(alpha=strength)
         )
-        return make_pipeline(StandardScaler(), estimator)
+        steps = [StandardScaler()]
+        if clip:
+            steps.append(FunctionTransformer(np.clip, kw_args={"a_min": -bound, "a_max": bound}))
+        return make_pipeline(*steps, estimator)
 
     def predict(model, x):
         return model.predict_proba(x)[:, 1] if classification else model.predict(x)
@@ -315,7 +342,14 @@ def main() -> None:
     parser.add_argument("--task", action="append", default=None)
     parser.add_argument("--arm", action="append", default=None)
     parser.add_argument("--out", type=Path, default=RUNS / "probe")
+    parser.add_argument(
+        "--clip-features",
+        action="store_true",
+        help="cap standardised features at sqrt(n_train - 1); off reproduces runs/probe/",
+    )
     args = parser.parse_args()
+    if args.clip_features and args.out == RUNS / "probe":
+        raise SystemExit("--clip-features needs its own --out, so it cannot mix with runs/probe/")
 
     tasks = args.task or ["bbbp", "esol"]
     selected = arms(args.arm)
@@ -368,6 +402,7 @@ def main() -> None:
                         features[test],
                         target[test],
                         cfg["task_type"],
+                        clip=args.clip_features,
                     )
 
                     run.mkdir(parents=True, exist_ok=True)
@@ -388,6 +423,9 @@ def main() -> None:
                                 "n_train": int(len(train)),
                                 "n_test": int(len(test)),
                                 "regularisation": chosen,
+                                "feature_clip": (
+                                    clip_bound(len(train)) if args.clip_features else None
+                                ),
                             },
                             indent=2,
                         )
