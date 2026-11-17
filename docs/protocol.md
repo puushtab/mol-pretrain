@@ -17,7 +17,7 @@ unchanged.
 | Stage | Corpora | Sizes | Seeds |
 |---|---|---|---|
 | C, size curve | pubchem | 500, 1k, 5k, 10k, 25k, 50k, 100k | 0, 1 |
-| D, composition | pubchem, coconut, zinc_nplike | one, read off the Stage C curve | 0, 1, 2 |
+| D, composition | zinc_general, coconut, zinc_nplike | 25,000 (Amendment 17) | 0, 1, 2 |
 
 The sizes are the union of two sources that disagree. The revised plan says 10k,
 25k, 50k, 100k. The transcript has Yuxin saying "500, like a thousand, like 10k,
@@ -100,7 +100,7 @@ over the main arm's files, which keeps the two populations apart on disk, but
 the comparison between them still confounds exclusion with resampling and the
 writeup has to say so.
 
-Recommendation, not yet decided. Stage D runs with `--exclude-benchmarks` on all
+Decided on 16 November, Amendment 17. Stage D runs with `--exclude-benchmarks` on all
 three corpora. It costs nothing, it removes at most 0.25 percent of any corpus,
 and without it the composition comparison is confounded by construction. The
 cost is that Stage D then stops being directly comparable to the Stage C curve,
@@ -788,3 +788,65 @@ record.
   subsampled budgets now match in steps. They do not match in gradient noise or
   in passes over the data.
 - Five splits. None of this adds power.
+
+### 17. Stage D is fixed: its size, its arms, and no benchmark molecule in any corpus. 16 November 2026
+
+Three things this protocol left open, or said twice in two ways, are decided
+here before any Stage D corpus is drawn. Decided by Gabriel on 16 November with
+the finished Stage C results in hand; Léonard has not yet signed it.
+
+**(a) The size is 25,000 molecules for every arm.** It is read off the Stage C
+curve as the stage table says. On ESOL at full labels 25,000 is the smallest
+corpus whose paired difference from the untrained encoder has an interval
+excluding zero, −0.106 [−0.190, −0.023], and doubling or quadrupling it moves
+that to −0.112 and −0.123. BBBP is flat at every size and has no say. 25,000
+also sits inside the 49,997-molecule `zinc_nplike` pool, which 50,000 did not
+(docs/open-issues.md), so no arm has to be redefined to reach it.
+
+What this costs: 25,000 is where the effect first appears, not where it is
+largest, and the interval at that size reaches within 0.023 of zero. Stage D
+compares corpora at a size where pretraining itself is only just detectable.
+
+**(b) The arms are `zinc_general`, `coconut` and `zinc_nplike`.** The stage table
+above said `pubchem`, `coconut`, `zinc_nplike` and
+`configs/experiments/stage_d_composition.yaml` has said `zinc_general`,
+`coconut`, `zinc_nplike` since 7 November. The config stands and the table is
+corrected. `zinc_nplike` is the top decile of `zinc_general` by
+natural-product-likeness, so that pair differs by the filter alone, where
+`pubchem` against `zinc_nplike` changes library and filter together. The Stage C
+encoders `pubchem_n25000_s0` and `_s1` are shown beside the three arms as a
+reference and are not an arm: they kept their benchmark molecules and have two
+seeds.
+
+**(c) Benchmark molecules are removed from every arm.** The recommendation in
+"Benchmark exposure" above is adopted. Corpora are drawn with
+`--exclude-benchmarks` as `<corpus>_noleak_n25000_s<seed>`, three seeds each.
+ZINC holds none of them, so its two arms are ordinary draws under that name;
+the name is uniform so the nine conditions read alike. Stage C task 14 found no
+difference from exclusion beyond seed to seed at 100,000 molecules, so this is
+insurance against a confound and is not expected to move a score.
+
+**(d) Everything else is as Stage C ran it.** Descriptors are standardised
+against `pubchem_n100000_s0`, the same frozen reference, so the nine encoders
+are trained on the objective the size curve was. Pretraining is
+`configs/pretrain/chemeleon.yaml` unchanged. Fine-tuning is the recipe of
+record, Amendment 16 included, on BBBP and ESOL over the same five frozen
+splits and four label budgets, into `runs/finetune_stage_d/`. The untrained
+encoder, the chemprop baselines and the forest are not re-run: their cells of
+record are paired with these on the split.
+
+**(e) What is committed to before any score exists.** The primary comparison is
+each pair of arms at full labels on each task, paired on the split, the three
+seeds of an arm averaged within a split first, with a 95% t-interval on the
+five differences. No arm, seed or cell is dropped on its result. The low label
+budgets are reported and are secondary.
+
+What a reader should hold against this stage. The `zinc_nplike` pool is 49,997
+molecules, so its three draws of 25,000 share about half their molecules pairwise
+and are less independent than the three draws of the other two arms. Five splits and three seeds: the
+seed-to-seed interval on ESOL at full labels in Stage C was about ±0.08 RMSE,
+so a composition effect smaller than that will not be seen and a null is not
+evidence of no effect. BBBP did not separate any encoder from any other in
+Stage C and is unlikely to here. docs/open-issues.md asks whether a task nearer
+natural-product chemistry should join the panel; none has been added, and one
+may be added later only by amendment and for all nine encoders at once.
