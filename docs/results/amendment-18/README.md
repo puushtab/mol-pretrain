@@ -113,8 +113,16 @@ Verified on 18 November, before any pretraining started:
   draw excludes. The guard is an added check: the quantile, the cutoff, the
   ordering and the permutation are untouched, and the condition it tests holds
   for all six draws, both being `bbbp` and `esol`. So the corpora on disk are
-  what the recorded code produces. Nothing else in the fifteen files changed,
-  and no pretraining had started when the digests were rewritten.
+  what the recorded code produces. Nothing else in the fifteen files changed.
+
+  One correction to that record: the commit which rewrote the digests says no
+  pretraining had started when it did so. Three had. `pubchem_noleak` seeds 0, 1
+  and 2 began at 00:42:49 and the digests were rewritten at 00:44:54, two
+  minutes later. It makes no difference to what those three encoders are — the
+  file that changed, `prepare_corpus.py`, draws corpora and is not read by a
+  pretraining job, and the corpora were on disk and unchanged before any of them
+  started — but the claim as written is wrong and the timing is checkable in
+  `sacct` and `git log`.
 
 Not checked, and stated as such:
 
