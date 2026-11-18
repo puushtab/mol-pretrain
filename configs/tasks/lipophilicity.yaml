@@ -1,0 +1,35 @@
+# Octanol/water distribution coefficient at pH 7.4, 4,200 molecules.
+# Regression, measured rather than computed.
+#
+# Chosen by scripts/screen_benchmark.py on 16 November, against the rule
+# written at the top of that file and before any model was trained on it.
+# The screen's own figures, measured against the whole 944,296-molecule pool:
+#
+#   task             in pool   at Tanimoto 1.0   sd(x)   detectable slope
+#   bbbp               72.7%             80.1%   0.151          0.448 sigma
+#   esol               93.3%             90.5%   0.130          0.665 sigma
+#   lipophilicity      18.4%             18.9%   0.229          0.212 sigma
+#
+# A factor of 2.12 on the quantity the proximity analysis is limited by, and
+# the reason is provenance rather than chemistry. These are disclosed
+# AstraZeneca compounds deposited to ChEMBL in 2015 and 2016, so they reach
+# PubChem with CIDs in the tens of millions and sit outside the released
+# corpus, which stops at CID 1,111,175.
+#
+# Two things the screen found that are worth keeping in view. BACE is almost
+# entirely absent from the pool, 0.2 percent, and is still the worst candidate
+# at 1.098 sigma, because being uniformly distant gives no variation to
+# regress on. And HIV, the NCI screening deck, came out at 75.4 percent in
+# pool, as saturated as BBBP, which is the prediction the CID-prefix reading
+# makes and it holds.
+name: lipophilicity
+source: data/raw/candidates/lipophilicity.csv
+smiles_column: smiles
+target_columns: [exp]
+task_type: regression
+metric: rmse
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+label_counts: [50, 100, 500, null]

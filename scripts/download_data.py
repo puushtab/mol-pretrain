@@ -64,6 +64,42 @@ SOURCES = {
             "c376624d3407204e",
         )
     ],
+    # Candidates for a third benchmark, not yet one of the tasks. They are
+    # fetched to be screened, and the screen decides. Same DeepChem bucket the
+    # two tasks come from, so the provenance argument is the one already made.
+    #
+    # The digests are None because nobody here has downloaded these files yet
+    # and a digest copied from a web page is not a digest we checked. The first
+    # fetch prints what it got, and the value is pinned here afterwards. A
+    # pinned None is honest. A wrong constant is worse than no constant.
+    "candidates": [
+        (
+            "https://deepchemdata.s3.us-west-1.amazonaws.com/datasets/bace.csv",
+            DATA_RAW / "candidates" / "bace.csv",
+            "f3fb9ce90bada3e2",
+        ),
+        (
+            "https://deepchemdata.s3.us-west-1.amazonaws.com/datasets/Lipophilicity.csv",
+            DATA_RAW / "candidates" / "lipophilicity.csv",
+            "aed41590cb30609d",
+        ),
+        (
+            "https://deepchemdata.s3.us-west-1.amazonaws.com/datasets/SAMPL.csv",
+            DATA_RAW / "candidates" / "freesolv.csv",
+            "ab5895d914ee87cb",
+        ),
+        (
+            "https://deepchemdata.s3.us-west-1.amazonaws.com/datasets/HIV.csv",
+            DATA_RAW / "candidates" / "hiv.csv",
+            "9ffa7fe57dc86c34",
+        ),
+        (
+            "https://raw.githubusercontent.com/molML/MoleculeACE/main/"
+            "MoleculeACE/Data/benchmark_data/CHEMBL234_Ki.csv",
+            DATA_RAW / "candidates" / "moleculeace_chembl234_ki.csv",
+            "447d38f659b86c71",
+        ),
+    ],
 }
 
 
@@ -137,7 +173,13 @@ def download(url: str, target: Path) -> None:
         raise OSError(f"{target} is {target.stat().st_size} bytes, server said {size}")
 
 
-def fetch(url: str, target: Path, expected: str) -> str:
+def fetch(url: str, target: Path, expected: str | None) -> str:
+    if expected is None:
+        # Nothing to check against yet. Fetch it and report what arrived, so
+        # the constant can be pinned from a file we actually hold.
+        if not target.exists():
+            download(url, target)
+        return f"digest {digest(target)}, PIN THIS in SOURCES"
     if target.exists():
         found = digest(target)
         if found == expected:
@@ -168,7 +210,14 @@ def unzip_coconut() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", nargs="+", choices=sorted(SOURCES), default=sorted(SOURCES))
+    # The candidates are not part of the project's data. They are fetched on
+    # purpose, by name, when the third benchmark is being screened.
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        choices=sorted(SOURCES),
+        default=sorted(set(SOURCES) - {"candidates"}),
+    )
     parser.add_argument("--verify", action="store_true", help="check digests, download nothing")
     args = parser.parse_args()
 
@@ -177,8 +226,13 @@ def main() -> None:
         print(f"{group}:")
         for url, target, expected in SOURCES[group]:
             if args.verify:
-                status = digest(target) == expected if target.exists() else False
-                label = "ok" if status else ("MISSING" if not target.exists() else "DIGEST DIFFERS")
+                if expected is None:
+                    label = f"unpinned, {digest(target)}" if target.exists() else "MISSING"
+                else:
+                    status = digest(target) == expected if target.exists() else False
+                    label = (
+                        "ok" if status else ("MISSING" if not target.exists() else "DIGEST DIFFERS")
+                    )
             else:
                 label = fetch(url, target, expected)
             if "MISMATCH" in label or "DIFFERS" in label or label == "MISSING":
