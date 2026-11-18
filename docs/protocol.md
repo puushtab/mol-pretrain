@@ -881,8 +881,13 @@ property profile and exposure together. Two arms separate the two questions:
 
 **(b) How the proximity arm is defined.** `configs/corpora/pubchem_nearbench.yaml`
 keeps the top decile of the PubChem cache by each molecule's Tanimoto similarity
-to its nearest neighbour among the 3,167 canonical BBBP and ESOL structures
-(Morgan, radius 2, 2,048 bits, the study's default throughout).
+to its nearest neighbour among the **2,999** canonical BBBP and ESOL structures
+(Morgan, radius 2, 2,048 bits, the study's default throughout). That count is
+measured, not quoted: 1,975 unique canonical structures from BBBP's 2,050 rows,
+1,117 from ESOL's 1,128, and 93 structures present in both tasks. An earlier
+draft of this clause said 3,167, which was 2,039 plus 1,128 and double-counted
+the shared molecules while ignoring canonicalisation; it is corrected here
+before any corpus of this arm was drawn.
 `scripts/score_benchmark_proximity.py` writes the score once per cache as a
 sidecar keyed on `source_row`; the PubChem cache parquet is not modified,
 because fourteen finished Stage C encoders were drawn from it.
@@ -928,10 +933,13 @@ recipe of record, Amendment 16 included, on BBBP and ESOL over the same five
 frozen splits and four label budgets, into `runs/finetune_a18/`. The untrained
 encoder, the chemprop baselines and the forest are not re-run: their cells of
 record are paired with these on the split. One consequence of the shared
-permutation is worth recording: seeds are seeded by seed alone, so
+permutation is worth recording: draws are seeded by seed alone, so
 `pubchem_noleak_n25000_s0` is the first 25,000 rows of the permutation that
-produced `pubchem_noleak_n100000_s0`, the exposure-check corpus, and is a subset
-of it.
+produced `pubchem_noleak_n100000_s0`, the exposure-check corpus. Checked on
+18 November, before pretraining: it is that corpus's exact 25,000-row prefix.
+Nothing in this amendment rests on the two being independent, and the
+exposure-check encoder is a different condition at a different size, but a
+reader comparing them should know they are nested rather than separate draws.
 
 **(e) What is committed to before any score exists.** Four intervals, one
 family. Two contrasts, each at two label budgets:

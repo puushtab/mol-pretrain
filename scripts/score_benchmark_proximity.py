@@ -15,7 +15,7 @@ comes to the benchmark, which is a property of the molecule and is therefore
 something a draw can select on.
 
 Direction matters and the two numbers are not interchangeable. Most of PubChem
-is far from the 3,167 benchmark structures, so the distribution this writes is
+is far from the 2,999 benchmark structures, so the distribution this writes is
 concentrated near zero and its upper decile is the part of PubChem that a
 coverage account of transfer would say does the work.
 
@@ -44,7 +44,7 @@ from natural_compounds.manifest import build_manifest_fields
 from natural_compounds.paths import CONFIGS, resolve_source
 
 # Query molecules per block. The intermediate is CHUNK by the benchmark count,
-# so 10,000 against 3,167 holds 127 MB in float32 and the row maximum costs
+# so 10,000 against 2,999 holds 120 MB in float32 and the row maximum costs
 # nothing beyond it.
 CHUNK = 10_000
 

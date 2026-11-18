@@ -15,7 +15,7 @@
 # primary comparison of Amendment 18(e).
 #
 # The score is each PubChem molecule's Tanimoto similarity to its nearest
-# neighbour among the 3,167 canonical BBBP and ESOL structures, written by
+# neighbour among the 2,999 canonical BBBP and ESOL structures, written by
 # scripts/score_benchmark_proximity.py. Note the direction: this is a property
 # of the corpus molecule, which is what a draw can select on. The table in
 # docs/check-in-1-report.md section 4.2 runs the other way and the two are not
