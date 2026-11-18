@@ -53,10 +53,22 @@ def package_versions() -> dict[str, str | None]:
 
 
 def build_manifest_fields(**details: Any) -> dict[str, Any]:
+    """What produced a result.
+
+    `commit` is None wherever the tree is not a git repository, which is every
+    cluster run, because deploy.sh rsyncs without `.git/`. The whole campaign
+    of 16 November recorded None and nobody noticed until it was audited.
+    `code_sha256` is the answer: a digest over the bytes of every file that can
+    change what a cell computes. It does not care about git, it crosses
+    machines, and two cells carrying the same value ran the same code.
+    """
+    from natural_compounds.codeprint import code_fingerprint
+
     return {
         "written_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "commit": git_commit(),
         "tree_dirty": git_dirty(),
+        "code_sha256": code_fingerprint(),
         "packages": package_versions(),
         **details,
     }
