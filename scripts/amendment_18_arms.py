@@ -464,6 +464,25 @@ def name_of(key: str) -> str:
     return "Stage D\nmean" if key == STAGE_D_MEAN else key
 
 
+def tick_names(ax: plt.Axes, names: list[str]) -> None:
+    """Arm names along an x axis, rotated so that ten of them do not collide.
+
+    The two-line names read well inside a legend and run into each other as tick
+    labels, so the newline becomes a space and the label is slanted instead. A
+    figure whose labels overlap is a figure whose reader cannot tell which mark
+    belongs to which arm, which is the defect the Stage D audit found.
+    """
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(
+        [name_of(n).replace("\n", " ") for n in names],
+        fontsize=6.2,
+        color=INK,
+        rotation=28,
+        ha="right",
+        rotation_mode="anchor",
+    )
+
+
 def colour_of(key: str) -> str:
     for k, _, _, colour in ARMS_18:
         if k == key:
@@ -488,7 +507,7 @@ def draw_scores(ax: plt.Axes, block: pd.DataFrame, task: str) -> None:
         dots(ax, np.full(len(splits), x), splits.to_numpy(), colour)
         centre(ax, x, splits.mean(), colour, "D" if name in dict.fromkeys(names[:2]) else "o")
     ax.set_xticks(range(len(names)))
-    ax.set_xticklabels([name_of(n) for n in names], fontsize=6.5, color=INK)
+    tick_names(ax, names)
     ax.set_ylabel(score_label(task), fontsize=8, color=INK_SOFT)
     style(ax)
 
@@ -524,7 +543,11 @@ def draw_primary(ax: plt.Axes, table: pd.DataFrame, task: str) -> None:
         budget = "all labels" if row["label_count"] == "all" else f"{row['label_count']} labels"
         labels.append(f"{row['contrast']}\n{budget}")
     ax.set_yticks([-y for y in range(len(table))])
-    ax.set_yticklabels(labels, fontsize=6.5, color=INK)
+    # On the right. These labels are long, and on the left they reach back into
+    # the panel beside this one and are clipped by it.
+    ax.yaxis.tick_right()
+    ax.set_yticklabels(labels, fontsize=6.5, color=INK, ha="left")
+    ax.tick_params(axis="y", pad=6)
     ax.set_xlabel(
         f"difference in {TASKS[task]['metric']}{TASKS[task]['unit']}, "
         f"{'higher' if TASKS[task]['better'] == 'higher' else 'lower'} is better",
@@ -535,6 +558,7 @@ def draw_primary(ax: plt.Axes, table: pd.DataFrame, task: str) -> None:
     ax.set_axisbelow(True)
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
+    ax.set_ylim(-len(table) + 0.4, 0.6)
 
 
 def draw_against_control(ax: plt.Axes, arms: pd.DataFrame, task: str) -> None:
@@ -557,7 +581,7 @@ def draw_against_control(ax: plt.Axes, arms: pd.DataFrame, task: str) -> None:
             zorder=3,
         )
     ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([name_of(a) for a in rows["arm"]], fontsize=6.5, color=INK)
+    tick_names(ax, list(rows["arm"]))
     ax.set_ylabel(f"minus untrained, {TASKS[task]['metric']}", fontsize=8, color=INK_SOFT)
     style(ax)
 
@@ -565,9 +589,20 @@ def draw_against_control(ax: plt.Axes, arms: pd.DataFrame, task: str) -> None:
 def headline_figure(
     cells: pd.DataFrame, primary: pd.DataFrame, arms: pd.DataFrame, stem: Path, missing: list[str]
 ) -> None:
-    fig = plt.figure(figsize=(12.6, 5.6))
+    fig = plt.figure(figsize=(14.2, 7.4))
+    # Generous left-to-right gap and bottom margin: panel B's labels sit on its
+    # right, and A and C carry ten slanted arm names each.
     grid = fig.add_gridspec(
-        2, 2, height_ratios=[1, 1], width_ratios=[1.05, 1], hspace=0.62, wspace=0.22
+        2,
+        2,
+        height_ratios=[1, 1],
+        width_ratios=[1.25, 1],
+        hspace=0.95,
+        wspace=0.10,
+        left=0.055,
+        right=0.80,
+        top=0.86,
+        bottom=0.28,
     )
     block = cells[(cells.task == PRIMARY_TASK) & (cells["labels"] == "all")]
 
@@ -595,7 +630,7 @@ def headline_figure(
     )
     fig.text(
         0.012,
-        0.055,
+        0.075,
         wrap(
             "Amendment 18. ESOL, all training labels. Each mark in A is one split, the seeds of "
             "an arm averaged inside it; the diamond is the mean over the five splits. B: thick "
@@ -603,13 +638,13 @@ def headline_figure(
             "widened by Bonferroni over the four. The nearest-decile arm was selected using the "
             "benchmark molecules' structures, test molecules included, so it measures an effect "
             "and is not a better encoder.",
-            150,
+            168,
         ),
         fontsize=7,
         color=INK_SOFT,
         va="top",
     )
-    stamp(fig, missing, 0.018)
+    stamp(fig, missing, 0.022)
     save(fig, stem)
 
 
