@@ -853,11 +853,27 @@ may be added later only by amendment and for all nine encoders at once.
 
 ### 18. Two PubChem arms at 25,000, to separate proximity from library. 18 November 2026
 
-Written on 18 November 2026 by Gabriel, with every Stage C and Stage D score in
-hand and **before any corpus of either arm was drawn**. Léonard has not signed
-it. Unlike Amendment 17, the ordering here is checkable: this amendment is
-committed before the first corpus file exists, so the git history shows the
-design preceded the draw rather than resting on a file's save time.
+Written on 18 November 2026, with every Stage C and Stage D score in hand and
+**before any corpus of either arm was drawn**. Léonard has not signed it.
+Unlike Amendment 17, the ordering here is checkable: this amendment is committed
+before the first corpus file exists, so the git history shows the design
+preceded the draw rather than resting on a file's save time.
+
+**Who decided what, corrected 18 November 2026.** An earlier version of this
+line read "Written on 18 November 2026 by Gabriel", which is not accurate and
+matters in a document Léonard reads as a pre-registration. Gabriel's
+instructions were: run a pretraining on a PubChem draw structurally close to the
+benchmarks without leakage, fine-tune it, and assess it against the released
+checkpoint and the PubChem and PubChem-plus-descriptors baselines; run **both**
+the control and the proximity arm; and exclude benchmark molecules by **exact
+SMILES only, for comparability** with the nine existing arms. Those are his
+decisions and they fix the arms, the goal and the exclusion rule. Everything
+else in this amendment was drafted by an AI session: the decile quantile, the
+sidecar score, the P1 and P2 contrasts, the two co-primary budgets, the
+four-interval family and its Bonferroni, the stop rule, the prediction table in
+18(g) and the corrections in 18(k). None of that has been reviewed by either
+author yet. It is registered because it was fixed before the draws, not because
+anyone has agreed to it.
 
 This amendment adds arms. It changes no recipe, no split, no label budget and
 nothing about Stage C or Stage D, whose results stand as reported.

@@ -230,9 +230,12 @@ nobody has looked at to become more than that.
 
 ### Superseded on 18 November: two arms launched, not one
 
-> **What actually happened.** On 18 November, at Gabriel's decision, Amendment
-> 18 was written and **two** arms were launched rather than the one this section
-> proposed: `pubchem_noleak` as described below, and `pubchem_nearbench_noleak`,
+> **What actually happened.** On 18 November Gabriel asked for a proximity arm
+> and, when asked which, for **both** arms rather than the one this section
+> proposed, excluding by exact SMILES for comparability. Amendment 18 was then
+> drafted by an AI session around those two decisions — see the attribution note
+> at the head of that amendment for which parts are his and which are not — and
+> the arms were launched: `pubchem_noleak` as described below, and `pubchem_nearbench_noleak`,
 > the decile of PubChem nearest the benchmarks, which moves proximity with the
 > library held fixed. Twenty jobs, about 40 GPU-hours. The amendment was
 > committed before any corpus was drawn, so the ordering is in the git history
