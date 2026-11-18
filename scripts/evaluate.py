@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 from natural_compounds.config import load_config
-from natural_compounds.metrics import score
+from natural_compounds.metrics import score, scored_column
 from natural_compounds.paths import CONFIGS
 
 # Which direction counts as better, so a paired difference can be read without
@@ -103,6 +103,7 @@ def collect(runs_dir: Path) -> pd.DataFrame:
         manifest = json.loads(manifest_path.read_text())
         task_cfg = load_config(CONFIGS / "tasks" / f"{manifest['task']}.yaml")
         frame = pd.read_csv(predictions)
+        column = scored_column(frame.columns, task_cfg["metric"])
         expected = manifest.get("n_test")
         if expected is not None and len(frame) != expected:
             # A job killed between the two writes leaves a short file, and a
@@ -120,7 +121,7 @@ def collect(runs_dir: Path) -> pd.DataFrame:
                 "task": manifest["task"],
                 "label_count": manifest.get("label_count"),
                 "metric": task_cfg["metric"],
-                "value": score(frame["y_true"], frame["y_pred"], task_cfg["metric"]),
+                "value": score(frame["y_true"], frame[column], task_cfg["metric"]),
                 # Carried so the two pretraining draws of one condition stay
                 # apart and a paired difference is reconstructible.
                 "arm": manifest.get("arm", manifest["corpus"]),
@@ -140,6 +141,13 @@ def collect(runs_dir: Path) -> pd.DataFrame:
                 "hostname": manifest.get("hostname"),
                 "device": manifest.get("device"),
                 "wall_seconds": manifest.get("wall_seconds"),
+                # 0 is the recipe as first registered. No manifest said which
+                # recipe it was before Amendment 16 gave it a reason to.
+                "protocol_amendment": manifest.get("protocol_amendment", 0),
+                "passes_per_epoch": manifest.get("passes_per_epoch"),
+                "steps_run": manifest.get("steps_run"),
+                "best_step": manifest.get("best_step"),
+                "val_draw_repaired": manifest.get("val_draw_repaired"),
             }
         )
 
@@ -416,6 +424,23 @@ def main() -> None:
             f"{args.runs_dir} mixes max_epochs {sorted(budgets)}. A short smoke cell would "
             "sit in the same mean as a protocol one.\nDelete the smoke runs and re-run."
         )
+
+    # Amendment 16 re-ran the 50 and 100 label cells into a directory of their
+    # own. Nothing else separates the two versions of a cell: same arm, same
+    # split, same budget, same test molecules. One of each in one table would
+    # be paired and averaged without a word.
+    recipes = (
+        results[results["method"] == "finetune"]
+        .groupby(["task", "label_count"], dropna=False)["protocol_amendment"]
+        .unique()
+    )
+    for (task, count), found in recipes.items():
+        if len(found) > 1:
+            raise SystemExit(
+                f"the {task} fine-tune cells at label_count {count} under {args.runs_dir} were "
+                f"run under protocol amendments {sorted(found)}, where 0 is the recipe as "
+                "registered.\nTwo recipes are not one measurement. Keep the two apart."
+            )
 
     for gap in uneven_test_sets(results):
         print(f"  ! {gap}")

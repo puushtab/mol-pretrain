@@ -10,7 +10,7 @@
 name: stage_d_composition
 stage: D
 corpora: [zinc_general, coconut, zinc_nplike]
-sizes: [50000]               # set from the Stage C curve, not guessed
+sizes: [25000]               # read off the Stage C curve, docs/protocol.md Amendment 17
 seeds: [0, 1, 2]
 pretrain: configs/pretrain/chemeleon.yaml
 tasks: [bbbp, esol]

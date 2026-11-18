@@ -117,7 +117,11 @@ def realised_fractions(split: Split) -> tuple[float, float, float]:
 
 
 def label_budget(
-    train: list[int], val: list[int], count: int | None, seed: int
+    train: list[int],
+    val: list[int],
+    count: int | None,
+    seed: int,
+    classes: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """The labelled molecules this cell may use, drawn with the split seed.
 
@@ -125,6 +129,16 @@ def label_budget(
     trains on 50 labels and validates on 203 has consumed 253, so its early
     stopping is far better informed than the regime it claims to represent. Two
     is the floor, because a single validation molecule stops nothing.
+
+    `classes` is the label of every row of the task, indexed by row, and is
+    passed for classification only (docs/protocol.md, Amendment 16). A
+    validation draw that holds one class cannot stop anything either: its loss
+    rewards confidence and nothing else. When the drawn prefix is one class its
+    last slot goes to the first later molecule of the same permutation that
+    carries the other class. The draw keeps its size, so the budget still counts
+    what Amendment 3 says it counts, and no new random number is drawn, so every
+    other draw is exactly what it was. If no later molecule differs the prefix
+    comes back as it is and the caller decides what a one-class cell means.
     """
     rng = np.random.default_rng(seed)
     train_idx, val_idx = np.asarray(train), np.asarray(val)
@@ -138,7 +152,15 @@ def label_budget(
     if count is None or count >= len(order):
         return order, val_order
     keep = min(len(val_order), max(2, round(count * len(val_order) / len(order))))
-    return order[:count], val_order[:keep]
+    drawn_val = val_order[:keep]
+    if classes is not None:
+        labels = np.asarray(classes)
+        if len(np.unique(labels[drawn_val])) == 1:
+            later = val_order[keep:]
+            other = later[labels[later] != labels[drawn_val[0]]]
+            if len(other):
+                drawn_val = np.append(drawn_val[:-1], other[0])
+    return order[:count], drawn_val
 
 
 def splits_fingerprint(directory: Path) -> str | None:

@@ -51,6 +51,24 @@ sbatch --parsable --dependency=afterok:<smoke> -a 0-89 --time=06:00:00 \
     --export=ALL,NC_OUT=runs/stage_b3 slurm/stage-b2.sbatch runs/stage_b3/plan.txt
 ```
 
+**The repository has moved past the campaign's code, and that is fine.** Since
+the merge with main the fingerprint of the working tree is `9200599c04b7db45`,
+not `d361f708393708ac`. Amendment 16 added an epoch floor, Amendment 17 added
+Stage D, and this branch added the training seed and the per-cell provenance.
+The campaign's exact bytes are kept at `runs/code_snapshots/d361f708393708ac/`
+and every one of its 1,560 cells records the digest, so nothing is lost. What
+changed is that reproducing the campaign now means extracting the snapshot
+rather than checking out the tip.
+
+**What Amendment 16 means for this campaign.** It sets a floor of eight
+optimiser steps an epoch. At fifty labels an epoch was one step and at a
+hundred it was two, so the cells at those budgets ran about eighteen and
+thirty-eight steps in total. Five hundred labels already gives eight steps at
+batch 64, so the floor changes nothing there, and nothing at full labels. The
+campaign's five-hundred and full-label cells are therefore unaffected and its
+fifty and hundred-label cells were produced under a recipe the protocol has
+since replaced.
+
 Two things to know before running them. There is no `stage-b3.sbatch`. The
 campaign ran on `slurm/stage-b2.sbatch` with `NC_OUT` pointing elsewhere, and
 the script's own header still describes the campaign of 16 November. And

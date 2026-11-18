@@ -24,6 +24,7 @@ every arm it is paired against. `n_train` records the total it actually saw and
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -33,12 +34,18 @@ import pandas as pd
 from natural_compounds.chem import fingerprint_matrix
 from natural_compounds.config import load_config
 from natural_compounds.manifest import build_manifest_fields
-from natural_compounds.paths import DATA_PROCESSED, RUNS, resolve_source
+from natural_compounds.paths import DATA_PROCESSED, ROOT, RUNS, resolve_source
 from natural_compounds.splits import label_budget, split_file_digest, splits_fingerprint
 
 # Fixed for every cell. The protocol allows no per-condition search, and a
 # forest with enough trees is famously insensitive to the rest.
 TREES = 500
+
+# Read once, when this process loaded the code, as scripts/finetune.py does.
+CODE_SHA256 = {
+    name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()[:16]
+    for name in ("scripts/baseline_forest.py", "src/natural_compounds/splits.py")
+}
 
 
 def features(smiles: list[str]) -> tuple[np.ndarray, np.ndarray]:
@@ -100,12 +107,19 @@ def main() -> None:
         for count in counts:
             # The same draw every neural arm gets at this seed and label count,
             # then both halves together, because a forest holds nothing back.
-            drawn_train, drawn_val = label_budget(
+            # Amendment 16: the class argument, exactly as scripts/finetune.py
+            # passes it, so the forest still sees the labels every neural arm
+            # consumes at this split and budget.
+            drawn = (
                 [i for i in split["train"] if readable[i]],
                 [i for i in split["val"] if readable[i]],
                 count,
                 split_seed,
             )
+            drawn_train, drawn_val = label_budget(
+                *drawn, classes=target if cfg["task_type"] == "classification" else None
+            )
+            repaired = not np.array_equal(drawn_val, label_budget(*drawn)[1])
             train_idx = np.concatenate([drawn_train, drawn_val])
             label = "all" if count is None else count
             run = args.out / f"forest__{task}__split{split_seed}__n{label}"
@@ -155,6 +169,12 @@ def main() -> None:
                         trees=TREES,
                         fingerprint="morgan r2 2048 bits",
                         used_validation_labels=True,
+                        # A forest has no epochs, steps or checkpoint. What
+                        # Amendment 16 changes for it is the draw, and this
+                        # says whether this cell's draw is one that changed.
+                        val_draw_repaired=bool(repaired),
+                        protocol_amendment=16,
+                        code_sha256=CODE_SHA256,
                     ),
                     indent=2,
                 )

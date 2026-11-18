@@ -19,6 +19,8 @@ hues.
 
 from __future__ import annotations
 
+import argparse
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -66,7 +68,7 @@ def cell(frame: pd.DataFrame, corpus: str, size, labels) -> tuple[float, float, 
     return float(row["mean"]), float(row["std"]), int(row["count"])
 
 
-def size_curve(summary: pd.DataFrame, out: str) -> None:
+def size_curve(summary: pd.DataFrame, out: str, note: str = "") -> None:
     """The headline: score against corpus size, with every baseline on it."""
     figure, axes = plt.subplots(1, 2, figsize=(11.5, 4.6))
     figure.patch.set_facecolor("white")
@@ -168,12 +170,13 @@ def size_curve(summary: pd.DataFrame, out: str) -> None:
         0.012,
         0.925,
         "Band and bars are ±1 SD across seeds. Not fine-tuning: a probe shows the shape of the "
-        "size effect, not the level a fine-tuned model reaches.",
+        "size effect, not the level a fine-tuned model reaches." + (f"\n{note}" if note else ""),
         fontsize=8.5,
         color=INK_SOFT,
         ha="left",
+        va="top" if note else "baseline",
     )
-    figure.tight_layout(rect=(0, 0, 1, 0.90))
+    figure.tight_layout(rect=(0, 0, 1, 0.86 if note else 0.90))
     figure.savefig(out, dpi=200, facecolor="white")
     plt.close(figure)
     print(f"wrote {out}")
@@ -287,14 +290,33 @@ def label_curve(summary: pd.DataFrame, out: str) -> None:
     print(f"wrote {out}")
 
 
+CLIP_NOTE = (
+    "Standardised features capped at the largest z-score a training molecule can have, "
+    "sqrt(n - 1); probe_size_curve.png is the same probe without the cap."
+)
+
+
 def main() -> None:
-    summary_path = RUNS / "probe" / "results_summary.csv"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--clipped",
+        action="store_true",
+        help="draw runs/probe_clipped/ (scripts/probe.py --clip-features) as *_clipped.png",
+    )
+    args = parser.parse_args()
+
+    runs = RUNS / ("probe_clipped" if args.clipped else "probe")
+    summary_path = runs / "results_summary.csv"
     if not summary_path.exists():
         raise SystemExit(f"{summary_path} is missing; run scripts/probe.py first")
     summary = pd.read_csv(summary_path)
 
+    # Both versions sit side by side in one folder, told apart by the suffix.
     out_dir = RUNS / "probe" / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.clipped:
+        size_curve(summary, str(out_dir / "probe_size_curve_clipped.png"), note=CLIP_NOTE)
+        return
     size_curve(summary, str(out_dir / "probe_size_curve.png"))
     label_curve(summary, str(out_dir / "probe_label_curves.png"))
 

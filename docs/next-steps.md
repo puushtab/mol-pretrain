@@ -1,5 +1,10 @@
 # Stage C: where we are and what happens next
 
+> **Superseded on 17 November 2026.** This page describes the project on 9 November.
+> Stages A to D have since run, including all 360 Stage D cells. The results,
+> what they mean and the steps that remain are in [remaining-steps.md](remaining-steps.md).
+> The text below is kept as it was written.
+
 Written 9 November 2026, 13:40, for Gabriel and Léonard. Usable as the
 Check-in 2 status page.
 

@@ -117,7 +117,7 @@ def test_the_gradient_reaches_the_encoder():
 @pytest.mark.parametrize("task_type", ["classification", "regression"])
 def test_a_cell_scores_every_test_molecule(task_type):
     target = LABELS if task_type == "classification" else LABELS * 2.5 - 1.0
-    predictions, val_predictions, curve, where = finetune.fit_cell(
+    predictions, val_predictions, logits, curve, where = finetune.fit_cell(
         {"task_type": task_type},
         "chemprop",
         SMILES,
@@ -145,8 +145,110 @@ def test_a_cell_scores_every_test_molecule(task_type):
     assert where["wall_seconds"] >= 0
     assert where["target_scaled"] is (task_type == "regression")
     if task_type == "classification":
-        # A probability, not a logit. evaluate.py scores AUROC on this column.
+        # y_pred stays a probability. The logit it came from rides beside it,
+        # and that is the column AUROC is scored on.
         assert ((predictions >= 0) & (predictions <= 1)).all()
+        assert np.isfinite(logits).all()
+        assert np.allclose(predictions, 1 / (1 + np.exp(-logits)))
+    else:
+        assert logits is None
+
+
+@needs_train
+def test_an_epoch_below_the_floor_is_eight_passes():
+    """Six molecules are one batch, so the recipe's two epochs are sixteen passes."""
+    *_, where = finetune.fit_cell(
+        {"task_type": "classification"},
+        "chemprop",
+        SMILES,
+        LABELS,
+        TRAIN,
+        VAL,
+        TEST,
+        split_seed=0,
+        train_seed=0,
+        max_epochs=2,
+        accelerator="cpu",
+    )
+    assert where["passes_per_epoch"] == 8
+    assert where["steps_per_epoch"] == 8
+    assert where["passes_run"] == 16
+    assert where["steps_run"] == 16
+    assert where["epochs_run"] == 2
+    # Validation is consulted at the end of a recipe epoch and nowhere else, so
+    # the kept checkpoint can only sit on a multiple of eight steps.
+    assert where["best_step"] in (8, 16)
+    assert where["max_epochs"] == 2 and where["warmup_epochs"] == 2 and where["patience"] == 10
+
+
+@needs_train
+def test_warmup_takes_two_recipe_epochs_in_a_real_cell(monkeypatch):
+    """The schedule as chemprop and lightning actually build it, read off a run.
+
+    One batch per pass and eight passes per epoch, so the learning rate must
+    start at 1e-4, reach 1e-3 at step 16 and never exceed it.
+    """
+    from lightning import pytorch as pl
+
+    seen: list[float] = []
+
+    class Watch(pl.Callback):
+        def on_train_batch_start(self, trainer, module, batch, batch_idx):
+            seen.append(trainer.optimizers[0].param_groups[0]["lr"])
+
+    real = pl.Trainer
+
+    def watched(*args, **kwargs):
+        kwargs["callbacks"] = [*kwargs["callbacks"], Watch()]
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(pl, "Trainer", watched)
+    *_, where = finetune.fit_cell(
+        {"task_type": "regression"},
+        "chemprop",
+        SMILES,
+        LABELS * 2.5 - 1.0,
+        TRAIN,
+        VAL,
+        TEST,
+        split_seed=0,
+        train_seed=0,
+        max_epochs=3,
+        accelerator="cpu",
+    )
+    assert len(seen) == where["steps_run"] == 24
+    assert seen[0] == pytest.approx(finetune.INIT_LR)
+    assert seen[8] == pytest.approx((finetune.INIT_LR + finetune.MAX_LR) / 2)
+    assert seen[16] == pytest.approx(finetune.MAX_LR)
+    assert max(seen) == pytest.approx(finetune.MAX_LR)
+
+
+@needs_train
+def test_the_logit_model_predicts_what_the_sigmoid_was_taken_of():
+    import torch
+    from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader
+
+    block, agg = encoders.untrained(0, d_h=32, depth=2)
+    model = finetune.build_model(True, block, agg, 32, None, 0).eval()
+    points = [
+        MoleculeDatapoint.from_smi(s, np.array([y])) for s, y in zip(SMILES, LABELS, strict=True)
+    ]
+    batch = next(iter(build_dataloader(MoleculeDataset(points), batch_size=12, shuffle=False)))
+    with torch.no_grad():
+        logits = model.predict_step(batch, 0)
+        probabilities = model(batch[0], batch[1], batch[2])
+    assert torch.allclose(torch.sigmoid(logits), probabilities, atol=1e-6)
+
+
+@needs_train
+def test_a_regression_cell_keeps_chemprops_own_model():
+    """Its forward is where the targets are unscaled, so it must not be bypassed."""
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler().fit(np.array([[0.0], [2.0]]))
+    block, agg = encoders.untrained(0, d_h=32, depth=2)
+    assert type(finetune.build_model(False, block, agg, 32, scaler, 0)).__name__ == "MPNN"
+    assert type(finetune.build_model(True, block, agg, 32, None, 0)).__name__ == "LogitMPNN"
 
 
 def test_descriptor_columns_are_chosen_on_train_alone():
@@ -260,6 +362,113 @@ def test_the_full_budget_is_still_everything():
     train, val = list(range(100)), list(range(20))
     drawn, kept = finetune.label_budget(train, val, None, seed=0)
     assert sorted(drawn) == train and sorted(kept) == val
+
+
+# Amendment 16. An epoch has a floor, and a validation draw has both classes.
+
+
+def test_an_epoch_is_never_fewer_than_eight_steps():
+    assert finetune.EPOCH_FLOOR_STEPS == 8
+    # 50, 100 and 500 labels, then ESOL and BBBP at every label.
+    assert [finetune.passes_per_epoch(n) for n in (50, 100, 500, 902, 1631)] == [8, 4, 1, 1, 1]
+
+
+def test_the_three_subsampled_budgets_share_one_recipe_in_steps():
+    at_50, at_100, at_500 = (finetune.recipe_in_steps(n) for n in (50, 100, 500))
+    for key in ("steps_per_epoch", "warmup_steps", "patience_steps", "max_steps"):
+        assert at_50[key] == at_100[key] == at_500[key], key
+    assert at_500 == {
+        "passes_per_epoch": 1,
+        "steps_per_epoch": 8,
+        "warmup_steps": 16,
+        "patience_steps": 80,
+        "max_steps": 1600,
+    }
+
+
+def test_the_cells_that_stand_keep_the_recipe_they_ran_with():
+    """One pass per epoch at 500 labels and at every label, so nothing is scaled."""
+    for n in (500, 902, 1631):
+        steps = finetune.recipe_in_steps(n)
+        assert steps["passes_per_epoch"] == 1
+        assert steps["steps_per_epoch"] == -(-n // finetune.BATCH)
+
+
+@needs_train
+def test_the_learning_rate_is_the_same_at_every_step_for_all_three():
+    """What chemprop builds from (passes per epoch, batches per pass), step by step."""
+    import torch
+    from chemprop.schedulers import build_NoamLike_LRSched
+
+    def curve(n_train: int) -> list[float]:
+        steps = finetune.recipe_in_steps(n_train)
+        passes, batches = steps["passes_per_epoch"], -(-n_train // finetune.BATCH)
+        # chemprop/models/model.py configure_optimizers, with the arguments
+        # fit_cell hands over: warmup_epochs = WARMUP * passes on the model and
+        # max_epochs = MAX_EPOCHS * passes on the trainer.
+        warmup = finetune.WARMUP * passes * batches
+        cooldown = (finetune.MAX_EPOCHS * passes - finetune.WARMUP * passes) * batches
+        optimiser = torch.optim.Adam([torch.nn.Parameter(torch.zeros(1))], finetune.INIT_LR)
+        schedule = build_NoamLike_LRSched(
+            optimiser, warmup, cooldown, finetune.INIT_LR, finetune.MAX_LR, finetune.FINAL_LR
+        )
+        rates = []
+        for _ in range(1600):
+            rates.append(optimiser.param_groups[0]["lr"])
+            optimiser.step()
+            schedule.step()
+        return rates
+
+    at_50, at_100, at_500 = curve(50), curve(100), curve(500)
+    assert at_50 == at_100 == at_500
+    assert at_500[0] == pytest.approx(1e-4)
+    assert at_500[16] == pytest.approx(1e-3)
+
+
+def test_without_classes_the_draw_is_what_it_always_was():
+    train, val = list(range(100, 300)), list(range(300, 340))
+    classes = np.zeros(340)
+    classes[::3] = 1
+    for count in (50, 100, None):
+        plain = finetune.label_budget(train, val, count, 4)
+        again = finetune.label_budget(train, val, count, 4, classes=None)
+        assert np.array_equal(plain[0], again[0]) and np.array_equal(plain[1], again[1])
+
+
+def test_a_two_class_validation_draw_is_left_alone():
+    train, val = list(range(200)), list(range(200, 240))
+    classes = np.arange(240) % 2
+    plain = finetune.label_budget(train, val, 50, 0)
+    aware = finetune.label_budget(train, val, 50, 0, classes=classes.astype(float))
+    assert len(set(classes[plain[1]])) == 2
+    assert np.array_equal(plain[0], aware[0]) and np.array_equal(plain[1], aware[1])
+
+
+def test_a_one_class_validation_draw_gives_up_its_last_slot():
+    train, val = list(range(200)), list(range(200, 240))
+    plain_train, plain_val = finetune.label_budget(train, val, 50, 3)
+    order = np.random.default_rng(3)
+    order.permutation(np.asarray(train))
+    permutation = order.permutation(np.asarray(val))
+    # Every drawn molecule positive, and the first negative two places later.
+    classes = np.ones(240)
+    classes[permutation[len(plain_val) + 1 :]] = 0
+
+    aware_train, aware_val = finetune.label_budget(train, val, 50, 3, classes=classes)
+    assert np.array_equal(aware_train, plain_train)
+    assert len(aware_val) == len(plain_val)
+    assert np.array_equal(aware_val[:-1], plain_val[:-1])
+    assert aware_val[-1] == permutation[len(plain_val) + 1]
+    assert set(classes[aware_val]) == {0.0, 1.0}
+    # Still inside the next budget's draw, so the budgets still nest.
+    assert set(aware_val) <= set(finetune.label_budget(train, val, 100, 3, classes=classes)[1])
+
+
+def test_a_validation_split_of_one_class_comes_back_as_it_was():
+    train, val = list(range(200)), list(range(200, 240))
+    plain = finetune.label_budget(train, val, 50, 1)
+    aware = finetune.label_budget(train, val, 50, 1, classes=np.ones(240))
+    assert np.array_equal(plain[1], aware[1])
 
 
 def test_a_finished_cell_is_refused_when_it_is_a_different_cell(tmp_path):

@@ -113,31 +113,37 @@ in seconds once the tables exist. Its first cell checks that the four output
 directories agree with the config and with each other, and says so if they do
 not.
 
+What has run, as of 17 November 2026: Stages A to D. Beyond the steps above,
+that is pretraining (fourteen PubChem encoders for the size curve of Stage C,
+nine encoders on three corpora for Stage D), fine-tuning and the baselines, all
+on the cluster. Stage E, the per-molecule analysis, is not built yet. The
+results, what they mean and the steps that remain are in
+[docs/remaining-steps.md](docs/remaining-steps.md).
+
 ## Stage B
 
-Fine-tuning is written and Stage B has run. The campaign the conclusions rest
-on is `runs/stage_b3`: three benchmarks by ten scaffold splits by three
-training seeds by four neural arms, plus a random forest baseline. That is
-1,560 cells and about 146 hours of compute on MIT ORCD Engaging. Every cell
-records a digest of the code that produced it and all of them carry the same
-value. `scripts/verify_campaign.py` runs twelve checks over a finished campaign
-and they pass.
+The campaign the conclusions rest on is `runs/stage_b3`: three benchmarks by
+ten scaffold splits by three training seeds by four neural arms, plus a random
+forest baseline. That is 1,560 cells and about 146 hours of compute on MIT ORCD
+Engaging. Every cell records a digest of the code that produced it and all of
+them carry the same value. `scripts/verify_campaign.py` runs twelve checks over
+a finished campaign and they pass.
 
 What it measures is the benefit of a pretrained initialisation against the same
 architecture untrained, paired on the split. Three baselines sit beside it: a
 standard chemprop D-MPNN with 38 times fewer parameters, the same with Mordred
 descriptors, and the forest.
 
+That campaign predates Amendment 16. At fifty and a hundred labels an epoch was
+one or two optimiser steps, so those cells ran about eighteen and thirty-eight
+steps in total and the epoch floor exists because of it. The five hundred and
+full-label cells already met the floor, so they are unaffected.
+
 `docs/stage-b-inventory.md` says what every campaign and job holds and carries
 the commands that reproduce the consolidated one. Read it before trusting a
 number, because two earlier campaigns are preserved beside it and they are not
 interchangeable. `docs/stage-b2-results.md` is the write-up, retractions
 included.
-
-What runs today: acquisition, ZINC sampling, caching, corpus preparation,
-splits, descriptors, the whole Stage A analysis, and the whole of Stage B, all
-verified on the real corpora. Pretraining has never been executed, it needs a
-GPU. Stages C to E are not built yet.
 
 Read docs/open-issues.md before starting Stage C or D. Two issues there have to
 be settled first and both have measurements behind them.

@@ -5,24 +5,29 @@
     uv run python scripts/finetune.py configs/tasks/bbbp.yaml \
         --init runs/pretrain/pubchem_n25000_s0/best.pt
 
-The budget is frozen in docs/protocol.md and identical for every arm. At most 50
-epochs, early stopping on validation loss with patience 10, batch 64, Adam on
-chemprop's own schedule, no per-condition search and no ensembling. The splits
-come off disk. So two arms differ in where their encoder came from and in
-nothing else, which is the only way a paired difference means anything.
+The budget is frozen in docs/protocol.md and identical for every arm. At most
+200 epochs, early stopping on validation loss with patience 10, batch 64, Adam
+on chemprop's own schedule, no per-condition search and no ensembling. An epoch
+is never fewer than eight optimiser steps (Amendment 16). The splits come off
+disk. So two arms differ in where their encoder came from and in nothing else,
+which is the only way a paired difference means anything.
 
 `--init` takes `released`, `scratch`, `chemprop`, or a path to one of our
 pretrained checkpoints. The same command therefore serves Stage B and Stage C.
 
 Writes one directory per cell with predictions.csv and manifest.json, which
 scripts/evaluate.py reads. predictions.csv carries row_index so a per-molecule
-analysis can join Stage A's distances onto it.
+analysis can join Stage A's distances onto it. A classification cell also
+carries y_logit, the output before the sigmoid, which is what AUROC is scored
+on: a float32 probability reaches exactly 1.0 and ties everything above it.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -36,7 +41,7 @@ import pandas as pd
 from natural_compounds.config import load_config
 from natural_compounds.encoders import SPECS, load
 from natural_compounds.manifest import build_manifest_fields
-from natural_compounds.paths import DATA_PROCESSED, RUNS, resolve_source
+from natural_compounds.paths import DATA_PROCESSED, ROOT, RUNS, resolve_source
 from natural_compounds.splits import label_budget, split_file_digest, splits_fingerprint
 
 # docs/protocol.md, "Fine-tuning budget", as amended. Early stopping decides,
@@ -60,10 +65,71 @@ MAX_EPOCHS, PATIENCE, BATCH = 200, 10, 64
 # be fair, but Yuxin's warning is that an under-tuned fine-tune hides a benefit
 # pretraining really gave. Recorded here and in docs/protocol.md Amendments.
 INIT_LR, MAX_LR, FINAL_LR, WARMUP = 1e-4, 1e-3, 1e-4, 2
+# docs/protocol.md, Amendment 16. An epoch is the smallest whole number of
+# passes over the training draw that gives at least this many optimiser steps,
+# and everything the budget counts in epochs is counted in those: warmup,
+# patience, the cap, how often validation is consulted, chemprop's cooldown.
+#
+# Without it an epoch at 50 labels is one step and at 100 labels two, so
+# patience 10 stopped a run after ten or twenty steps and warmup was over in two
+# or four. Most of those cells restored a model that had barely moved.
+#
+# Eight is not a free choice. It is what the 500-label budget already gets at
+# batch 64, and it is the largest floor that leaves the 500-label and all-label
+# cells exactly as they ran: any larger and they would change too. With it the
+# three subsampled budgets share one recipe step for step, the same learning
+# rate at every step, the same sixteen steps of warmup, the same eighty of
+# patience. No other value was run.
+REFERENCE_BUDGET = 500
+EPOCH_FLOOR_STEPS = math.ceil(REFERENCE_BUDGET / BATCH)
+AMENDMENT = 16
 # Standardised descriptors are bounded here, the same six standard
 # deviations configs/pretrain/chemeleon.yaml winsorises its targets at.
 DESCRIPTOR_CLAMP = 6.0
 RELEASED_SIZE = 944_286
+
+
+def passes_per_epoch(n_train: int) -> int:
+    """How many passes over the training draw make one epoch of the recipe."""
+    return math.ceil(EPOCH_FLOOR_STEPS / math.ceil(n_train / BATCH))
+
+
+def recipe_in_steps(n_train: int, max_epochs: int = MAX_EPOCHS) -> dict:
+    """The budget in optimiser steps, which is the unit the optimiser sees.
+
+    Taken from the count rather than from the loader so nothing about the order
+    in which the model and the loaders are built has to move.
+    """
+    passes = passes_per_epoch(n_train)
+    steps = passes * math.ceil(n_train / BATCH)
+    return {
+        "passes_per_epoch": passes,
+        "steps_per_epoch": steps,
+        "warmup_steps": WARMUP * steps,
+        "patience_steps": PATIENCE * steps,
+        "max_steps": max_epochs * steps,
+    }
+
+
+def code_fingerprint() -> dict:
+    """A digest of each file that decides what a cell does.
+
+    The manifest's commit says which tree a run started from, and the tree has
+    been dirty for every cell so far, so the commit alone does not say which
+    code ran. These do.
+    """
+    files = [
+        "scripts/finetune.py",
+        "src/natural_compounds/splits.py",
+        "src/natural_compounds/encoders.py",
+    ]
+    return {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()[:16] for name in files}
+
+
+# Read once, when this process loaded the code. A job runs its cells in one
+# process for minutes or hours, and read again as each cell finished this would
+# name whatever was on disk by then, which need not be what ran.
+CODE_SHA256 = code_fingerprint()
 
 
 def arm_name(init: str, descriptors: bool = False, freeze_epochs: int = 0) -> str:
@@ -253,7 +319,29 @@ def dataset(smiles: list[str], target: np.ndarray, indices: np.ndarray, x_d=None
     )
 
 
-def build_model(classification: bool, block, agg, width: int, scaler, seed: int):
+def logit_model():
+    """chemprop's MPNN, predicting the output before the sigmoid.
+
+    Used for classification only. The head's `forward` is the sigmoid of its
+    network and `train_step` is the network itself, so this hands back the
+    number the probability was computed from. Training and validation are
+    untouched: both already go through `train_step`. A regression head has
+    nothing to undo, and its `forward` is where the targets are unscaled, so it
+    keeps chemprop's own class.
+    """
+    from chemprop.models import MPNN
+
+    class LogitMPNN(MPNN):
+        def predict_step(self, batch, batch_idx: int, dataloader_idx: int = 0):
+            bmg, V_d, X_d, *_ = batch
+            return self.predictor.train_step(self.fingerprint(bmg, V_d, X_d))
+
+    return LogitMPNN
+
+
+def build_model(
+    classification: bool, block, agg, width: int, scaler, seed: int, warmup_epochs: int = WARMUP
+):
     """The encoder, its aggregation, and a fresh task head on top.
 
     Seeded here rather than once at the start of the cell, so the head begins
@@ -277,7 +365,9 @@ def build_model(classification: bool, block, agg, width: int, scaler, seed: int)
             input_dim=width, output_transform=UnscaleTransform.from_standard_scaler(scaler)
         )
     )
-    return MPNN(
+    # chemprop counts warmup in passes over the loader, so the recipe's two
+    # epochs are handed over as two epochs' worth of passes.
+    return (logit_model() if classification else MPNN)(
         block,
         agg,
         predictor,
@@ -285,7 +375,7 @@ def build_model(classification: bool, block, agg, width: int, scaler, seed: int)
         init_lr=INIT_LR,
         max_lr=MAX_LR,
         final_lr=FINAL_LR,
-        warmup_epochs=WARMUP,
+        warmup_epochs=warmup_epochs,
     )
 
 
@@ -311,8 +401,11 @@ def resolve_accelerator(requested: str) -> str:
     return "cpu"
 
 
-def freeze_callback(epochs: int):
+def freeze_callback(epochs: int, passes: int = 1):
     """Hold the encoder still for the first few epochs, then let it move.
+
+    `epochs` are the recipe's epochs. The trainer counts passes, so the release
+    comes at `epochs * passes`.
 
     Off by default, and it is not part of the headline comparison.
 
@@ -337,7 +430,7 @@ def freeze_callback(epochs: int):
                 parameter.requires_grad = False
 
         def on_train_epoch_start(self, trainer, module):
-            if trainer.current_epoch == epochs:
+            if trainer.current_epoch == epochs * passes:
                 for parameter in module.message_passing.parameters():
                     parameter.requires_grad = True
 
@@ -381,7 +474,7 @@ def fit_cell(
     accelerator: str,
     descriptors: np.ndarray | None = None,
     freeze_epochs: int = 0,
-) -> tuple[np.ndarray, np.ndarray, list[dict], dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, list[dict], dict]:
     """Train one model and predict the test subset.
 
     Two seeds, not one. `split_seed` chooses the molecules, through the frozen
@@ -392,13 +485,15 @@ def fit_cell(
     result that moved between two runs on the same split. Passing the split
     seed as the train seed reproduces the old behaviour exactly.
 
-    Returns test predictions, validation predictions, the learning curve, and
-    what it did.
+    Returns test predictions, validation predictions, the logits the test
+    predictions came from for a classification cell and None otherwise, the
+    learning curve, and what it did.
     """
     import torch
     from chemprop.data import build_dataloader
     from lightning import pytorch as pl
     from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+    from scipy.special import expit
 
     classification = task_cfg["task_type"] == "classification"
     pl.seed_everything(train_seed, workers=True)
@@ -432,11 +527,21 @@ def fit_cell(
 
     # The head reads the encoder's vector and the descriptors side by side.
     extra = 0 if features is None else int(features.shape[1])
-    model = build_model(classification, block, agg, where["d_h"] + extra, scaler, train_seed)
+    steps = recipe_in_steps(len(train_idx), max_epochs)
+    passes = steps["passes_per_epoch"]
+    # The training seed, not the split seed. The head and the untrained encoder
+    # follow it, so two repeats of one cell differ in training luck alone.
+    model = build_model(
+        classification, block, agg, where["d_h"] + extra, scaler, train_seed, WARMUP * passes
+    )
 
     train_loader = build_dataloader(train_set, batch_size=BATCH, shuffle=True, num_workers=0)
     val_loader = build_dataloader(val_set, batch_size=BATCH, shuffle=False, num_workers=0)
     test_loader = build_dataloader(test_set, batch_size=BATCH, shuffle=False, num_workers=0)
+    # chemprop drops a last batch of one, which would make a pass shorter than
+    # the count says and the schedule with it. None of our budgets does that.
+    if len(train_loader) != math.ceil(len(train_idx) / BATCH):
+        raise SystemExit(f"a pass is {len(train_loader)} batches for {len(train_idx)} molecules")
 
     started = time.monotonic()
     with tempfile.TemporaryDirectory() as scratch:
@@ -450,9 +555,23 @@ def fit_cell(
         curve = history_callback()
         callbacks = [keeper, stopper, curve]
         if freeze_epochs > 0:
-            callbacks.append(freeze_callback(freeze_epochs))
+            callbacks.append(freeze_callback(freeze_epochs, passes))
+        # One epoch of the recipe is `passes` passes of the trainer. Validation
+        # is consulted once per recipe epoch, so patience still counts ten
+        # looks at the validation loss and a checkpoint can only be kept at the
+        # end of a recipe epoch. With passes == 1 these are the arguments every
+        # 500-label and all-label cell ran with.
+        #
+        # Three ways of writing this that look equivalent and are not. Patience
+        # times passes with validation every pass consults six molecules eight
+        # times as often and can restore a model from inside an epoch.
+        # check_on_train_epoch_end or save_on_train_epoch_end makes the
+        # callbacks count passes again, on a validation loss that is stale for
+        # all but one of them. val_check_interval, limit_train_batches and
+        # accumulate_grad_batches change what a step is.
         trainer = pl.Trainer(
-            max_epochs=max_epochs,
+            max_epochs=max_epochs * passes,
+            check_val_every_n_epoch=passes,
             callbacks=callbacks,
             accelerator=resolve_accelerator(accelerator),
             devices=1,
@@ -461,7 +580,11 @@ def fit_cell(
             enable_model_summary=False,
         )
         trainer.fit(model, train_loader, val_loader)
-        epochs_run = int(trainer.current_epoch)
+        passes_run, steps_run = int(trainer.current_epoch), int(trainer.global_step)
+        # The file name is the record: epoch=23-step=24.ckpt. Read before the
+        # directory goes, without opening a hundred megabytes to ask.
+        found = re.search(r"step=(\d+)", Path(keeper.best_model_path).name)
+        best_step = int(found.group(1)) if found else None
         # Early stopping leaves the last model in memory, not the best one.
         batches = trainer.predict(model, test_loader, ckpt_path=keeper.best_model_path)
         # The same model on the validation rows. Model selection ran on twelve
@@ -469,12 +592,33 @@ def fit_cell(
         # ask afterwards how well it chose.
         val_batches = trainer.predict(model, val_loader, ckpt_path=keeper.best_model_path)
 
-    predictions = torch.cat([b.squeeze(-1) for b in batches]).flatten().numpy()
-    val_predictions = torch.cat([b.squeeze(-1) for b in val_batches]).flatten().numpy()
+    raw = torch.cat([b.squeeze(-1) for b in batches]).flatten().numpy()
+    # The logit stays in the float32 it was computed in, so it is written and
+    # read back exactly. The probability is taken from it in float64, where the
+    # sigmoid has room: float32 reaches 1.0 at a logit of 17, float64 at 37.
+    logits = raw if classification else None
+    predictions = expit(raw.astype(np.float64)) if classification else raw
+    # The validation set is scored by the same best checkpoint and through the
+    # same sigmoid, so a validation prediction is on the scale of a test one.
+    val_raw = torch.cat([b.squeeze(-1) for b in val_batches]).flatten().numpy()
+    val_predictions = expit(val_raw.astype(np.float64)) if classification else val_raw
     where |= {
         "wall_seconds": round(time.monotonic() - started, 1),
-        "epochs_run": epochs_run,
-        "best_val_loss": float(keeper.best_model_score) if keeper.best_model_score else None,
+        # In the recipe's epochs, which is what max_epochs and patience are in.
+        "epochs_run": passes_run // passes,
+        "passes_run": passes_run,
+        "steps_run": steps_run,
+        "best_step": best_step,
+        **steps,
+        "protocol_amendment": AMENDMENT,
+        # The per-file digests, under their own key. manifest.py records a
+        # digest over all twenty-one files as code_sha256, and writing both to
+        # one key would silently drop whichever landed first.
+        "code_files_sha256": dict(CODE_SHA256),
+        # `is not None`: a validation loss of exactly zero is a score.
+        "best_val_loss": (
+            float(keeper.best_model_score) if keeper.best_model_score is not None else None
+        ),
         "max_epochs": max_epochs,
         "patience": PATIENCE,
         "batch_size": BATCH,
@@ -491,7 +635,7 @@ def fit_cell(
         "device": str(trainer.strategy.root_device),
         "torch_threads": int(torch.get_num_threads()),
     }
-    return predictions, val_predictions, curve.rows, where
+    return predictions, val_predictions, logits, curve.rows, where
 
 
 def main() -> None:
@@ -551,6 +695,7 @@ def main() -> None:
     smiles = frame[cfg["smiles_column"]].astype(str).tolist()
     target = frame[cfg["target_columns"][0]].to_numpy(dtype=np.float64)
     readable = parseable(smiles)
+    classification = cfg["task_type"] == "classification"
 
     arm = arm_name(args.init, args.descriptors, args.freeze_epochs)
     computed = mordred_descriptors(task, smiles) if args.descriptors else None
@@ -575,12 +720,18 @@ def main() -> None:
                 # The label draw stays on the split seed whatever the training
                 # seed is, so repeats of a cell see the same labelled molecules
                 # and the spread between them is training noise and nothing else.
-                train_idx, val_idx = label_budget(
+                drawn = (
                     [i for i in split["train"] if readable[i]],
                     [i for i in split["val"] if readable[i]],
                     count,
                     split_seed,
                 )
+                train_idx, val_idx = label_budget(
+                    *drawn, classes=target if classification else None
+                )
+                # Amendment 16's two-class validation draw. A cell records
+                # whether its own draw had to be repaired.
+                repaired = not np.array_equal(val_idx, label_budget(*drawn)[1])
                 label = "all" if count is None else count
                 stamp = "" if args.train_seed is None else f"__t{train_seed}"
                 run = args.out / f"{arm}__{task}__split{split_seed}{stamp}__n{label}"
@@ -618,7 +769,7 @@ def main() -> None:
                     print(f"  {run.name}: skipped, the draw holds one class only")
                     continue
 
-                predictions, val_predictions, curve, where = fit_cell(
+                predictions, val_predictions, logits, curve, where = fit_cell(
                     cfg,
                     args.init,
                     smiles,
@@ -634,10 +785,24 @@ def main() -> None:
                     args.freeze_epochs,
                 )
 
+                columns = {
+                    "row_index": test_idx,
+                    "y_true": target[test_idx],
+                    "y_pred": predictions,
+                }
+                if logits is not None:
+                    columns["y_logit"] = logits
+                    where |= {
+                        "n_val_positive": int((target[val_idx] == 1).sum()),
+                        "n_val_negative": int((target[val_idx] == 0).sum()),
+                    }
+                where["val_draw_repaired"] = bool(repaired)
+
                 run.mkdir(parents=True, exist_ok=True)
-                pd.DataFrame(
-                    {"row_index": test_idx, "y_true": target[test_idx], "y_pred": predictions}
-                ).to_csv(run / "predictions.csv", index=False)
+                # No float_format. pandas writes the shortest text that reads
+                # back to the same number, and y_true has to stay the label in
+                # the dataset to the last bit.
+                pd.DataFrame(columns).to_csv(run / "predictions.csv", index=False)
                 pd.DataFrame(
                     {"row_index": val_idx, "y_true": target[val_idx], "y_pred": val_predictions}
                 ).to_csv(run / "val_predictions.csv", index=False)
@@ -660,6 +825,7 @@ def main() -> None:
                 )
                 print(
                     f"  {run.name}: {where['epochs_run']} epochs, "
+                    f"{where['steps_run']} steps, best at step {where['best_step']}, "
                     f"{where['wall_seconds']}s, {len(test_idx)} scored",
                     flush=True,
                 )
