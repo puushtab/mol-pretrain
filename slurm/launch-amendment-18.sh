@@ -46,6 +46,15 @@ for seed in "${SEEDS[@]}"; do
         echo "$RUN kept a benchmark molecule; Amendment 18(c) requires none" >&2
         exit 1
     fi
+    # The exclusion set reaches prepare_corpus.py as --task flags typed by hand,
+    # so a draw made with one task would be filed, described and pretrained as
+    # the registered arm while excluding half of what it should. 18(b) fixes the
+    # set at the 2,999 canonical BBBP and ESOL structures; check the draw agrees.
+    if ! grep -q '"benchmark_molecules": 2999' "$CORPORA/$RUN.stats.json"; then
+        echo "$RUN was drawn against a different benchmark set than 18(b) registers" >&2
+        grep '"benchmark_molecules"' "$CORPORA/$RUN.stats.json" >&2
+        exit 1
+    fi
 done
 
 if [ ! -f "$DIGESTS" ]; then
