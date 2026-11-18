@@ -1040,10 +1040,14 @@ these were made.
    is the measurement the Stage D audit used for COCONUT. Like for like, per
    25,000 molecules: the control arm holds **30 to 47** stereo-ignored matches
    against COCONUT's 65 to 71, and the decile arm holds **362 to 410**, about
-   six times COCONUT's rate. The remainder of each tie count — 9 to 15 and 129
-   to 151 — is the fingerprint's own collision rate. So the tie count overstated
-   the decile arm's exposure by roughly a quarter, and the corrected numbers are
-   what the write-up uses.
+   six times COCONUT's rate. The rest of each tie count is isotopologues (4 to 5
+   and 25 to 41: carbon-11 and fluorine-18 labelled analogues, which chemprop's
+   featuriser separates by one of 72 atom features, the atomic-mass scalar) and
+   true collisions (4 to 11 and 104 to 110: distinct molecules that binary
+   folded Morgan bits cannot separate, because they record presence and not
+   count, which ties homologous series together). So the tie count overstated
+   the decile arm's exposure by roughly a quarter. The corrected numbers are
+   what the write-up uses, and the tie count is never quoted beside COCONUT's.
 
 3. **P1 does not move proximity alone.** The decile nearest the benchmarks is
    also a narrower slice of chemical space than a uniform tenth, so internal

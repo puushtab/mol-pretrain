@@ -1,7 +1,7 @@
-arm,seed,molecules,drawn_from,selected_on_proximity,decile_cutoff,exact_benchmark_matches,mean_nn_similarity,median_nn_similarity,fingerprint_ties,stereo_ignored_matches,fingerprint_collisions,over_0.9,over_0.7
-pubchem_noleak,0,25000,941893,False,,0,0.3514,0.3333,49,34,15,56,317
-pubchem_noleak,1,25000,941893,False,,0,0.3518,0.3333,56,47,9,72,297
-pubchem_noleak,2,25000,941893,False,,0,0.35,0.3333,44,30,14,52,272
-pubchem_nearbench_noleak,0,25000,93044,True,0.4815,0,0.5833,0.55,521,392,129,635,2912
-pubchem_nearbench_noleak,1,25000,93044,True,0.4815,0,0.5842,0.55,541,410,131,661,3016
-pubchem_nearbench_noleak,2,25000,93044,True,0.4815,0,0.5835,0.55,513,362,151,625,2943
+arm,seed,molecules,drawn_from,selected_on_proximity,decile_cutoff,exact_benchmark_matches,mean_nn_similarity,median_nn_similarity,fingerprint_ties,stereo_ignored_matches,isotopologue_matches,fingerprint_collisions,over_0.9,over_0.7
+pubchem_noleak,0,25000,941893,False,,0,0.3514,0.3333,49,34,4,11,56,317
+pubchem_noleak,1,25000,941893,False,,0,0.3518,0.3333,56,47,5,4,72,297
+pubchem_noleak,2,25000,941893,False,,0,0.35,0.3333,44,30,5,9,52,272
+pubchem_nearbench_noleak,0,25000,93044,True,0.4815,0,0.5833,0.55,521,392,25,104,635,2912
+pubchem_nearbench_noleak,1,25000,93044,True,0.4815,0,0.5842,0.55,541,410,27,104,661,3016
+pubchem_nearbench_noleak,2,25000,93044,True,0.4815,0,0.5835,0.55,513,362,41,110,625,2943

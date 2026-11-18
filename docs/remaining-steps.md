@@ -248,11 +248,15 @@ nobody has looked at to become more than that.
 > anyway, on the same single-author basis as Stage D.
 >
 > Benchmark molecules are removed by exact canonical SMILES, the rule every
-> other arm used. On a draw selected for proximity that leaves about 525
-> stereo-ignored matches per 25,000 molecules against about 50 in the control
-> arm and 65 to 71 in a COCONUT draw. That is the treatment, it is counted per
-> draw in `docs/results/amendment-18/corpora.csv`, and Amendment 18(f) forbids
-> reporting the decile arm as a better encoder.
+> other arm used, so near matches remain and are counted per draw in
+> `docs/results/amendment-18/corpora.csv`. Measured the way the Stage D audit
+> measured COCONUT's 65 to 71 — stereo-stripped canonical SMILES — a
+> proximity-selected draw keeps **362 to 410** such matches per 25,000
+> molecules and the control arm keeps **30 to 47**, so the treatment arm sits at
+> about six times COCONUT's rate and the control at about half of it. The raw
+> fingerprint-tie count, 513 to 541, is an upper bound and not the same measure;
+> it must not be quoted beside COCONUT's figure. That exposure is the treatment,
+> and Amendment 18(f) forbids reporting the decile arm as a better encoder.
 >
 > Status, tables and the verification are in
 > [results/amendment-18/README.md](results/amendment-18/README.md); the analysis

@@ -58,8 +58,31 @@ def stereo_stripped(smiles: str) -> str | None:
     return Chem.MolToSmiles(mol)
 
 
+def isotope_stripped(smiles: str) -> str | None:
+    """Canonical SMILES with stereochemistry *and* isotope labels dropped.
+
+    `isomericSmiles=False` drops both, where `RemoveStereochemistry` drops only
+    the first. The gap between the two counts is isotopologues: carbon-11 and
+    fluorine-18 labelled analogues of benchmark molecules, which are PET
+    radiotracers and are well represented in PubChem.
+
+    Which of the two is the honest count depends on whether the encoder can see
+    an isotope, and it can, barely. Measured against chemprop's own
+    `SimpleMoleculeMolGraphFeaturizer`: carbon-11 benzaldehyde and benzaldehyde
+    differ in exactly one of 72 atom features on one atom, the last, which is
+    0.01 times the atomic mass (0.1101 against 0.1201). Bond features and the
+    graph itself are identical. So they are not the same input, and they are as
+    near to it as two different inputs get. Both counts are reported and the
+    write-up says which it means.
+    """
+    from rdkit import Chem
+
+    mol = Chem.MolFromSmiles(smiles)
+    return None if mol is None else Chem.MolToSmiles(mol, isomericSmiles=False)
+
+
 def benchmark_sets(task_names: list[str]) -> tuple[set[str], set[str]]:
-    """The benchmark structures, canonically and with stereochemistry removed."""
+    """The benchmark structures under the two reductions, stereo and stereo+isotope."""
     from natural_compounds.chem import canonicalize
     from natural_compounds.paths import resolve_source
 
@@ -73,7 +96,9 @@ def benchmark_sets(task_names: list[str]) -> tuple[set[str], set[str]]:
                 exact.add(canonical)
     flattened = {stereo_stripped(s) for s in exact}
     flattened.discard(None)
-    return exact, flattened
+    isotopeless = {isotope_stripped(s) for s in exact}
+    isotopeless.discard(None)
+    return flattened, isotopeless
 
 
 def main() -> None:
@@ -95,8 +120,11 @@ def main() -> None:
             proximity_path(cache_name).parent / f"{cache_name}.benchmark_proximity.manifest.json"
         ).read_text()
     )
-    _, bench_flat = benchmark_sets(proximity_manifest["tasks"])
-    print(f"benchmarks: {len(bench_flat):,} structures once stereochemistry is removed")
+    bench_flat, bench_iso = benchmark_sets(proximity_manifest["tasks"])
+    print(
+        f"benchmarks: {len(bench_flat):,} structures without stereochemistry, "
+        f"{len(bench_iso):,} without stereochemistry or isotope labels"
+    )
 
     scores = pl.read_parquet(proximity_path(cache_name))
     frame = load(cache_name).join(scores, on="source_row", how="left")
@@ -127,6 +155,7 @@ def main() -> None:
             # COCONUT draw, which was a stereo-ignored SMILES match.
             ties = [s for s in smiles if by_smiles[s] >= 1.0]
             stereo = sum(1 for s in ties if stereo_stripped(s) in bench_flat)
+            loose = sum(1 for s in ties if isotope_stripped(s) in bench_iso)
             rows.append(
                 {
                     "arm": f"{arm}_noleak",
@@ -140,7 +169,8 @@ def main() -> None:
                     "median_nn_similarity": round(float(v.median()), 4),
                     "fingerprint_ties": len(ties),
                     "stereo_ignored_matches": stereo,
-                    "fingerprint_collisions": len(ties) - stereo,
+                    "isotopologue_matches": loose - stereo,
+                    "fingerprint_collisions": len(ties) - loose,
                     "over_0.9": int((v > 0.9).sum()),
                     "over_0.7": int((v > 0.7).sum()),
                 }
@@ -160,6 +190,7 @@ def main() -> None:
         "mean_nn_similarity",
         "fingerprint_ties",
         "stereo_ignored_matches",
+        "isotopologue_matches",
         "fingerprint_collisions",
     ]
     print()

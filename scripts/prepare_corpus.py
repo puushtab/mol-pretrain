@@ -208,11 +208,18 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     # What exclusion by exact canonical SMILES leaves behind. Amendment 18(c)
     # keeps that rule, the rule every other arm used, so a draw selected for
     # proximity keeps its near neighbours of benchmark molecules and this says
-    # how many rather than leaving the write-up to assume. A score of exactly
-    # 1.0 is a molecule whose Morgan fingerprint equals a benchmark molecule's
-    # while its canonical SMILES does not: fingerprints ignore stereochemistry,
-    # so these are the stereo-ignored matches the Stage D audit found in
-    # COCONUT, counted here at the point the draw is made.
+    # how many rather than leaving the write-up to assume.
+    #
+    # `at_1.0` is a fingerprint tie: a molecule whose Morgan fingerprint at
+    # radius 2 equals a benchmark molecule's while its canonical SMILES does
+    # not. It is an UPPER BOUND on the stereo-ignored matches the Stage D audit
+    # counted for COCONUT, not that measurement, and must not be quoted beside
+    # COCONUT's 65 to 71. Measured on these draws it overstates by about a
+    # quarter: a tie is a stereoisomer, an isotopologue, or a pair that binary
+    # folded Morgan bits cannot separate because they record presence and not
+    # count, which ties whole homologous series together. The Stage-D-comparable
+    # number is written by scripts/describe_a18_corpora.py, which does the
+    # stereo-stripped SMILES comparison; see docs/protocol.md 18(k)(2).
     if SCORE_COLUMN in sample.columns:
         scores = sample[SCORE_COLUMN]
         stats["sample_benchmark_proximity"] = {

@@ -43,10 +43,25 @@ Tanimoto on Morgan fingerprints, radius 2, 2,048 bits, from each corpus
 molecule to its nearest neighbour among the 2,999 canonical BBBP and ESOL
 structures.
 
-| | pool drawn from | mean similarity | fingerprint ties | of those, stereo-ignored | collisions | above 0.9 | above 0.7 |
+| | pool drawn from | mean similarity | fingerprint ties | stereo-ignored | isotopologues | collisions | above 0.7 |
 |---|---|---|---|---|---|---|---|
-| `pubchem_noleak` | 941,893 | 0.351 | 44–56 | **30–47** | 9–15 | 52–72 | 272–317 |
-| `pubchem_nearbench_noleak` | 93,044 | 0.584 | 513–541 | **362–410** | 129–151 | 625–661 | 2,912–3,016 |
+| `pubchem_noleak` | 941,893 | 0.351 | 44–56 | **30–47** | 4–5 | 4–11 | 272–317 |
+| `pubchem_nearbench_noleak` | 93,044 | 0.584 | 513–541 | **362–410** | 25–41 | 104–110 | 2,912–3,016 |
+| a COCONUT draw, Stage D | — | — | — | 65–71 | — | — | — |
+
+A fingerprint tie splits into three things, and only the first is the
+measurement the Stage D audit made:
+
+- **stereo-ignored matches** — same molecule once stereochemistry is removed;
+- **isotopologues** — carbon-11 and fluorine-18 labelled analogues, PET
+  radiotracers, which are well represented in PubChem. The encoder can just
+  distinguish these: against chemprop's own featuriser, carbon-11 benzaldehyde
+  differs from benzaldehyde in exactly one of 72 atom features on one atom, the
+  0.01-times-atomic-mass scalar, with identical bonds and identical graph;
+- **collisions** — distinct molecules radius-2 binary Morgan cannot separate,
+  because folded bits record presence and not count, which ties whole
+  homologous series together: tridecane ties with ESOL's heptane,
+  cyclooctene with cycloheptene.
 | whole PubChem cache, for reference | 944,286 | 0.353 | — | — | — |
 
 Three things to read off it.
@@ -78,9 +93,8 @@ audit made for COCONUT, so the comparison is like for like:
 - the **nearest-decile arm** keeps **362 to 410**, roughly six times COCONUT's
   rate and 1.5 percent of itself.
 
-The remainder of each tie count, 9 to 15 and 129 to 151, is the fingerprint's
-own collision rate: distinct molecules radius-2 Morgan cannot tell apart. About
-a quarter of the decile arm's ties are collisions rather than stereoisomers,
+The remainder of each tie count is isotopologues and collisions, broken out in
+the table above. About a quarter of the decile arm's ties are not stereoisomers,
 which is why the tie count alone would have overstated exposure by that much.
 
 The decile arm is still the largest structure exposure in the study, and that is
@@ -107,13 +121,15 @@ Verified on 18 November, before any pretraining started:
   comparing them should know.
 - The decile cutoff and pool size were measured, not chosen: 0.4815 and 95,437
   before exclusion, 93,044 after.
-- `code.sha256` was re-recorded after the draws were made. One file changed
-  between the two recordings, `prepare_corpus.py`, which gained a guard
-  requiring the proximity sidecar to have been scored against the same tasks the
-  draw excludes. The guard is an added check: the quantile, the cutoff, the
-  ordering and the permutation are untouched, and the condition it tests holds
-  for all six draws, both being `bbbp` and `esol`. So the corpora on disk are
-  what the recorded code produces. Nothing else in the fifteen files changed.
+- `code.sha256` has been re-recorded twice since the draws were made, and both
+  times for the same file, `prepare_corpus.py`. It gained a guard requiring the
+  proximity sidecar to have been scored against the same tasks the draw
+  excludes, and then a corrected comment about what the tie count measures.
+  Checked by diffing the file against the commit the draws were made at: the
+  quantile, the cutoff, the `>=` test, the ordering and the permutation are
+  untouched, and the guard's condition holds for all six draws, both task sets
+  being `bbbp` and `esol`. So the corpora on disk are what the recorded code
+  produces. Nothing else in the fifteen files changed.
 
   One correction to that record: the commit which rewrote the digests says no
   pretraining had started when it did so. Three had. `pubchem_noleak` seeds 0, 1
