@@ -1,3 +1,6 @@
+import json
+
+import numpy as np
 import pytest
 from rdkit import Chem
 
@@ -100,3 +103,53 @@ def test_unparseable_rows_belong_to_no_subset():
     smiles = MANY + ["not a smiles", "C(C"]
     tr, va, te = scaffold_split(smiles, (0.8, 0.1, 0.1), seed=0)
     assert sorted(tr + va + te) == list(range(len(MANY)))
+
+
+def test_a_new_seed_file_does_not_change_the_old_cells_digest(tmp_path):
+    """The directory fingerprint moves when the campaign is extended. The
+    per-file one does not, which is the whole point of adding it.
+
+    Five finished splits and a sixth arriving is the ordinary way a campaign
+    grows. Under the directory digest alone, evaluate.py refuses to pool the
+    old cells with the new although not one of them was scored on a molecule
+    the other did not see.
+    """
+    from natural_compounds.splits import split_file_digest, splits_fingerprint
+
+    for seed in range(5):
+        (tmp_path / f"seed{seed}.json").write_text(
+            json.dumps({"train": [seed], "val": [], "test": []})
+        )
+    before_dir = splits_fingerprint(tmp_path)
+    before_cell = split_file_digest(tmp_path, 2)
+
+    (tmp_path / "seed5.json").write_text(json.dumps({"train": [5], "val": [], "test": []}))
+
+    assert splits_fingerprint(tmp_path) != before_dir
+    assert split_file_digest(tmp_path, 2) == before_cell
+
+
+def test_a_rewritten_split_file_does_change_its_digest(tmp_path):
+    from natural_compounds.splits import split_file_digest
+
+    path = tmp_path / "seed0.json"
+    path.write_text(json.dumps({"train": [0], "val": [], "test": [1]}))
+    before = split_file_digest(tmp_path, 0)
+    path.write_text(json.dumps({"train": [0], "val": [], "test": [2]}))
+    assert split_file_digest(tmp_path, 0) != before
+    assert split_file_digest(tmp_path, 9) is None
+
+
+def test_the_label_draw_depends_on_the_split_seed_only():
+    """Repeats of a cell under different training seeds must see the same
+    labelled molecules, or the spread between them mixes training noise with a
+    different draw and measures neither.
+    """
+    from natural_compounds.splits import label_budget
+
+    train, val = list(range(100)), list(range(100, 120))
+    first = label_budget(train, val, 50, seed=3)
+    second = label_budget(train, val, 50, seed=3)
+    assert np.array_equal(first[0], second[0])
+    assert np.array_equal(first[1], second[1])
+    assert not np.array_equal(first[0], label_budget(train, val, 50, seed=4)[0])
