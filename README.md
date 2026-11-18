@@ -107,10 +107,12 @@ in seconds once the tables exist. Its first cell checks that the four output
 directories agree with the config and with each other, and says so if they do
 not.
 
-What runs today: acquisition, ZINC sampling, caching, corpus preparation,
-splits, descriptors, and the whole Stage A analysis, all verified on the real
-corpora. Pretraining has never been executed, it needs a GPU. Fine-tuning is not
-written. Stages B to E are deliberately not built yet.
+What has run, as of 17 November 2026: Stages A to D. Beyond the steps above,
+that is pretraining (fourteen PubChem encoders for the size curve of Stage C,
+nine encoders on three corpora for Stage D), fine-tuning and the baselines, all
+on the cluster. Stage E, the per-molecule analysis, is not built yet. The
+results, what they mean and the steps that remain are in
+[docs/remaining-steps.md](docs/remaining-steps.md).
 
 Read docs/open-issues.md before starting Stage C or D. Two issues there have to
 be settled first and both have measurements behind them.

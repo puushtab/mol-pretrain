@@ -1,9 +1,12 @@
 # Where the project stands, and the steps that remain
 
-Written on 17 November 2026, after Stage D finished and before check-in 2. It
-replaces the plan for that day, which was carried out except for compiling the
-slides (its diagram is still at `figures/remaining-steps.png`; its step names
-are not the ones used below).
+Written on 17 November 2026, after the last of the 360 Stage D cells came in and
+before check-in 2. It replaces the plan drawn that afternoon, while the last
+encoder was still training. That plan turned on one question, "are all 360
+cells in?". They are, so its diagram is gone: `figures/remaining-steps.png` is
+now the diagram of this page, drawn by `scripts/plot_remaining_steps.py`.
+
+![What each finished stage showed, and the steps from 18 November to the presentation](figures/remaining-steps.png)
 
 Stage C and Stage D numbers below were read from the tables in `docs/results/`
 or recomputed from the raw cells on 17 November. Stage A and Stage B numbers are
@@ -29,9 +32,56 @@ excludes zero.
 - **What nobody planned for.** Chemprop given computed descriptors, with no
   pretraining at all, is as good as or better than every encoder we pretrained,
   at every label budget on ESOL.
-- **The Stage D script, tables and figures were checked and are committed** on
-  branch `feat/stage-d-composition`. The numbers were right. Two figures and
-  the script's safety checks were fixed first; the tables did not change.
+- **The Stage D script, tables and figures were checked and are in pull request
+  #10** (branch `feat/stage-d-composition`), which waits for Léonard's review.
+  The numbers were right. Two figures and the script's safety checks were fixed
+  first; the tables did not change.
+
+## What the results mean
+
+Our reading, from the surest to the least sure. The tables it rests on are
+further down, and so is the wording it must not slide into.
+
+1. **How many molecules matters, and the gain arrives late and stops early.**
+   On ESOL at full labels no corpus under 25,000 molecules is separably better
+   than the untrained encoder, and at 1,000 the interval is on the harmful side. At
+   25,000 the gain is 0.106 RMSE. Four times more molecules add nothing we can
+   see. This holds for one task, one label budget and one control.
+2. **Pretraining at this scale does not beat feeding the descriptors in.**
+   Chemprop with computed descriptors and no pretraining reaches 0.792 RMSE on
+   ESOL at full labels. The untrained encoder is at 0.944 and the PubChem
+   25,000 encoders at 0.837. No encoder we pretrained is separably better than
+   that baseline in any cell, and at 50 labels our 100,000-molecule encoder is
+   worse than it by 0.186 [0.058, 0.315].
+3. **Which molecules: Stage D cannot tell, and that is its result.** On ESOL at
+   full labels the three arms sit at 0.900 (ZINC general), 0.876 (COCONUT) and
+   0.863 (ZINC NP-like), all between the untrained encoder and the PubChem
+   reference. They are 0.036 apart from first to last. Two seeds of one arm are
+   0.044 apart, and the design could detect about 0.06. What the 360 cells
+   allow us to say is a bound: at 25,000 molecules, a composition effect on
+   ESOL is smaller than about 0.08 RMSE, and on BBBP smaller than about 0.03
+   AUROC. They do not allow "composition does not matter".
+4. **Natural products: no sign that origin adds anything to resemblance.**
+   COCONUT against ZINC NP-like is the tightest comparison in Stage D, +0.013
+   [−0.014, +0.040] on ESOL. But neither benchmark is a natural-product task,
+   so the sharp form of the hypothesis (a natural-product corpus helps on
+   natural-product-like molecules) was not put to a test. One exploratory look,
+   below, points that way and no further.
+5. **Nearness to the benchmark may be what a corpus buys. We cannot claim it.**
+   PubChem, the corpus nearest to ESOL in Stage A, is ahead of all three arms
+   by 0.026 to 0.062 RMSE. The comparison is not registered, and the PubChem
+   encoders kept their benchmark molecules and have two seeds. The optional
+   fourth arm below exists to close exactly this.
+6. **BBBP after fine-tuning says nothing either way.** At full labels the three
+   arms, the PubChem reference, Chemprop with descriptors and the untrained
+   encoder all score between 0.916 and 0.932 AUROC, and no interval against the
+   untrained encoder excludes zero.
+
+The project set itself this test on 8 November: "A clear null result counts as
+success. We succeed if we can say how large any difference is and whether it
+holds outside the pretraining chemistry." The first half is met: the difference
+between corpora is bounded, and so is what size buys. The second half is what
+Stage E is for.
 
 ## What was checked before Stage D was committed
 
@@ -211,7 +261,7 @@ November, this becomes a sentence in the limitations.
 | Not run | Why not now |
 |---|---|
 | Fifteen more scaffold splits | About 2 GPU-hours, so cost is not the reason. It extends the design after a p of 0.044 was seen, the new test sets redraw the same 811 ring-containing ESOL molecules, and new split files change the digest every script pairs on. |
-| A second regression task | The task that could be added in time (lipophilicity) is drug-like and does not test the natural-product hypothesis. Any new task brings back unequal exposure: the benchmark-free corpora exclude BBBP and ESOL only. Ask at check-in 2 whether one is expected; the default answer is no, and "ESOL is the only informative task" is a stated limitation. |
+| A second regression task | The task that could be added in time (lipophilicity) is drug-like and does not test the natural-product hypothesis. Any new task brings back unequal exposure: the benchmark-free corpora exclude BBBP and ESOL only. Ask at check-in 2, on 19 November, whether one is expected; the default answer is no, and "ESOL is the only informative task" is a stated limitation. |
 | More than one initialisation of the untrained baselines | A fair objection (one initialisation per split, sd 0.167 across splits on ESOL), but it changes headline Stage C numbers after they were shown. Item 1 and the encoder-against-encoder contrasts answer it without touching the control. |
 | A per-molecule bootstrap of the six registered comparisons | It would be a fourth interval per row, one of which strengthens a hit while another removes it. |
 
@@ -233,40 +283,45 @@ November, this becomes a sentence in the limitations.
 
 ## The steps to the end
 
-![The steps from 17 November to the presentation, in four lanes](figures/roadmap.png)
-
-Dark blue sets the finishing date. Light blue has slack. Dashed happens only if
+These are the lanes in the lower half of the diagram at the top of this page.
+Orange has to be ready for check-in 2, which is on Thursday 19 November. Dark
+blue sets the finishing date. Light blue has slack. Dashed happens only if
 Amendment 18 is signed first. The arrows show the dependencies that carry the
 chain; the Needs column below is complete. Where a step starts on the day the
 step it needs ends, the hand-over happens within that day.
 
 | Step | What | When | Who | Needs |
 |---|---|---|---|---|
-| W1 | Commit Stage D, this page and its two diagrams (done). Push the branch, open the pull request. Correct the slide wording listed below. | 17–18 Nov | Gabriel | |
-| D1 | Read and sign Amendments 16 and 17. Both are on `main` unsigned. Planned for 18–20 Nov; the hard limit is the freeze. | 18–20 Nov | Léonard | W1 |
-| D2 | Write and sign Amendment 18: Stage E and what was already looked at; the fourth arm and its single primary contrast; the probe as a secondary; which sensitivity intervals are shown; a dated correction of the "±0.08" sentence in Amendment 17; a record that no split is added, and that no task is added unless check-in 2 asks for one (then by a further amendment, for every encoder at once). | 18–20 Nov | both | W1 |
-| A1 | Item 1 above and the detectable difference of item 2. Scripts go in the repo. The sensitivity columns of item 2 wait for D2 and go with A2. | 18–19 Nov | Gabriel | |
-| W2 | Compile `docs/slides/check-in-2.tex` off the cluster (there is no LaTeX here) and read the eleven frames with A1 folded in. | 19–21 Nov | Gabriel | W1, A1 |
+| W1 | Done on 17 November, so not on the diagram: Stage D and this page committed, the branch pushed, pull request #10 opened, its checks passing. | 17 Nov | Gabriel | |
+| A1 | Item 1 above and the detectable difference of item 2. Scripts go in the repo. The sensitivity columns of item 2 wait for D2 and go with A2. If a table is not ready, the slides say so and show what they already have, at full labels. | 18 Nov, the morning of 19 Nov at the latest | Gabriel | |
+| W2 | Correct the slide wording listed under open items. Compile `docs/slides/check-in-2.tex` off the cluster (there is no LaTeX here) and read the eleven frames, with A1 folded in as it lands. | 18–19 Nov, before the check-in | Gabriel | W1, A1 |
+| D3 | Check-in 2. Stage C, the exposure check, the corrected probe, Stage D as a null with what it could detect, and the comparison with Chemprop with descriptors. One question to ask: is a second task expected? The answer goes into Amendment 18. | 19 Nov | both | W2 |
+| D1 | Review pull request #10. Read and sign Amendments 16 and 17. Both are on `main` unsigned. Planned for 18–20 Nov; the hard limit is the freeze. | 18–20 Nov | Léonard | W1 |
+| D2 | Write and sign Amendment 18: Stage E and what was already looked at; the fourth arm and its single primary contrast; the probe as a secondary; which sensitivity intervals are shown; a dated correction of the "±0.08" sentence in Amendment 17; a record that no split is added, and of what check-in 2 answered about a second task (if one is asked for, it comes by a further amendment, for every encoder at once). It is drafted after the check-in, because 18 November goes to A1 and W2. | 19–20 Nov | both | W1, D3 |
 | A2 | Stage E, item 3 above. | 20–25 Nov | Gabriel | D2 |
 | C1 | Optional. Fourth arm: draw, describe, pretrain, fine-tune. If preempted it may run to 26 Nov; A4 is then done the same day, or the arm is reported as incomplete. | 21–23 Nov | cluster | D2 |
 | A3 | Optional. Probe on the Stage D encoders, after fixing encoder discovery. | 21–23 Nov | Gabriel | D2 |
-| D3 | Check-in 2. Stage C, the exposure check, the corrected probe, Stage D as a null with what it could detect, and the comparison with Chemprop with descriptors. One question to ask: is a second task expected? | by 24 Nov | both | W2 |
 | A4 | Optional. Score the fourth arm: extend the arms and pairs in `scripts/stage_d_composition.py`, regenerate tables and figures. | 24–26 Nov | Gabriel | C1 |
 | W3 | Refresh the stale documents listed below. | 24–26 Nov | Gabriel | A1 |
 | A5 | Recompute, independently and from `predictions.csv`, every number added since 15 November. Review and merge. These are Thanksgiving Thursday to Saturday. | 26–28 Nov | Léonard | A2, A4 |
 | — | **Results frozen.** Everything merged, Amendments 16 to 18 signed, no job in the queue. | 29 Nov | both | D1, D2, A5 |
-| W4 | Write-up. The outline and the limitations do not wait for anything and can start on 24 November; the numbers go in after the freeze, 29 Nov to 1 Dec. | 27 Nov–1 Dec | both | A5, the freeze |
+| W4 | Write-up. The outline and the limitations do not wait for anything and can start once check-in 2 is over; the numbers go in after the freeze, 29 Nov to 1 Dec. | 27 Nov–1 Dec | both | A5, the freeze |
 | W5 | Presentation slides from the check-in 2 deck and the frozen figures; one rehearsal. If the course gives us 1 or 2 December, this moves to 28–30 Nov. | 30 Nov–3 Dec | both | W4 |
 | D4 | Group presentation. | 1–10 Dec, set by the course | both | W5 |
 
-The chain that sets the finishing date is W1, D2, A2, A5, the freeze, W4, W5,
-ending at D4. D1 has until the freeze.
+The chain that sets the finishing date is D2, A2, A5, the freeze, W4, W5,
+ending at D4. No step on it needs training. D1 has until the freeze.
 What sets its pace is agreement between the two of us, not GPU time: Stage E,
 the fourth arm and the probe all wait on Amendment 18. The cluster has slack;
 in Stage D the one preempted encoder finished 38 hours after submission. The thin
 place is A5: Stage E is new code that Léonard has to re-derive in the week of
-Thanksgiving. Check-in 2 is not on the chain. It needs only W1, A1 and W2,
-all of them work on cells that already exist.
+Thanksgiving.
+
+Check-in 2 is not on that chain, but it is the nearest deadline: Thursday 19
+November, two days from this page. It needs only A1 and W2, both of them work
+on cells that already exist, and both fit in 18 November if nothing else is
+started that day. Amendment 18 is therefore drafted after the check-in and
+signed on 20 November, which is still the date the fourth arm needs.
 
 ## Open items
 
@@ -307,8 +362,9 @@ all of them work on cells that already exist.
   `scripts/results_overview.py`, `docs/results/overview/` and
   `docs/figures/results_overview.*`, which appeared on 17 November at 18:23
   from another session and were not checked here. The scripts behind the
-  detection limits, the first look at Stage E and the diagram above are in a
-  scratch directory that does not last.
+  detection limits and the first look at Stage E are in a scratch directory
+  that does not last. The diagram is not: `scripts/plot_remaining_steps.py`
+  draws it from `docs/figures/remaining-steps.json`.
 
 ## Wording the write-up has to avoid
 
