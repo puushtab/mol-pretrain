@@ -1,0 +1,30 @@
+prep zinc_general 29278916
+pretrain zinc_general_noleak_n25000_s0 29278917
+finetune zinc_general_noleak_n25000_s0 bbbp 29278918
+finetune zinc_general_noleak_n25000_s0 esol 29278919
+pretrain zinc_general_noleak_n25000_s1 29278920
+finetune zinc_general_noleak_n25000_s1 bbbp 29278921
+finetune zinc_general_noleak_n25000_s1 esol 29278922
+pretrain zinc_general_noleak_n25000_s2 29278923
+finetune zinc_general_noleak_n25000_s2 bbbp 29278924
+finetune zinc_general_noleak_n25000_s2 esol 29278925
+prep coconut 29278926
+pretrain coconut_noleak_n25000_s0 29278927
+finetune coconut_noleak_n25000_s0 bbbp 29278928
+finetune coconut_noleak_n25000_s0 esol 29278929
+pretrain coconut_noleak_n25000_s1 29278930
+finetune coconut_noleak_n25000_s1 bbbp 29278931
+finetune coconut_noleak_n25000_s1 esol 29278932
+pretrain coconut_noleak_n25000_s2 29278933
+finetune coconut_noleak_n25000_s2 bbbp 29278934
+finetune coconut_noleak_n25000_s2 esol 29278935
+prep zinc_nplike 29278936
+pretrain zinc_nplike_noleak_n25000_s0 29278937
+finetune zinc_nplike_noleak_n25000_s0 bbbp 29278938
+finetune zinc_nplike_noleak_n25000_s0 esol 29278939
+pretrain zinc_nplike_noleak_n25000_s1 29278940
+finetune zinc_nplike_noleak_n25000_s1 bbbp 29278941
+finetune zinc_nplike_noleak_n25000_s1 esol 29278942
+pretrain zinc_nplike_noleak_n25000_s2 29278943
+finetune zinc_nplike_noleak_n25000_s2 bbbp 29278944
+finetune zinc_nplike_noleak_n25000_s2 esol 29278945
