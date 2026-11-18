@@ -1,0 +1,20 @@
+prep pubchem 29503380
+pretrain pubchem_noleak_n25000_s0 29503381
+finetune pubchem_noleak_n25000_s0 bbbp 29503382
+finetune pubchem_noleak_n25000_s0 esol 29503383
+pretrain pubchem_noleak_n25000_s1 29503384
+finetune pubchem_noleak_n25000_s1 bbbp 29503385
+finetune pubchem_noleak_n25000_s1 esol 29503386
+pretrain pubchem_noleak_n25000_s2 29503387
+finetune pubchem_noleak_n25000_s2 bbbp 29503388
+finetune pubchem_noleak_n25000_s2 esol 29503389
+prep pubchem_nearbench 29503871
+pretrain pubchem_nearbench_noleak_n25000_s0 29503872
+finetune pubchem_nearbench_noleak_n25000_s0 bbbp 29503873
+finetune pubchem_nearbench_noleak_n25000_s0 esol 29503874
+pretrain pubchem_nearbench_noleak_n25000_s1 29503876
+finetune pubchem_nearbench_noleak_n25000_s1 bbbp 29503877
+finetune pubchem_nearbench_noleak_n25000_s1 esol 29503878
+pretrain pubchem_nearbench_noleak_n25000_s2 29503879
+finetune pubchem_nearbench_noleak_n25000_s2 bbbp 29503880
+finetune pubchem_nearbench_noleak_n25000_s2 esol 29503881

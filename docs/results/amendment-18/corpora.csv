@@ -1,0 +1,7 @@
+arm,seed,molecules,draw_pool,cutoff,exact_benchmark_matches,mean_nn_sim,median_nn_sim,at_1.0,over_0.9,over_0.7
+pubchem_noleak,0,25000,941893,,0,0.3514,0.3333,49,56,317
+pubchem_noleak,1,25000,941893,,0,0.3518,0.3333,56,72,297
+pubchem_noleak,2,25000,941893,,0,0.35,0.3333,44,52,272
+pubchem_nearbench_noleak,0,25000,93044,0.4815,0,0.5833,0.55,521,635,2912
+pubchem_nearbench_noleak,1,25000,93044,0.4815,0,0.5842,0.55,541,661,3016
+pubchem_nearbench_noleak,2,25000,93044,0.4815,0,0.5835,0.55,513,625,2943
