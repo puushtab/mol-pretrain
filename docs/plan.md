@@ -1,5 +1,12 @@
 # Plan
 
+> **Superseded on 17 November 2026** for the calendar and the week by week
+> plan: Stages A to D have run, including all 360 Stage D cells, and the steps
+> that remain are in [remaining-steps.md](remaining-steps.md). Check-in 2 is on
+> 19 November. The stages and
+> the reasons for their order still stand. The text below is kept as it was
+> written.
+
 Revised 7 November 2026, after the call with Yuxin Xie on 2 November.
 
 ## The calendar we actually have

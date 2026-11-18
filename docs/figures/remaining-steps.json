@@ -1,0 +1,243 @@
+{
+ "title": "Where the project stands on 17 November, and the steps that remain",
+ "subtitle": "Stages A to D have run and all 360 Stage D cells are in. Intervals are 95% t-intervals over the five scaffold splits, not adjusted for the number of comparisons.\nESOL is scored by RMSE (lower is better), BBBP by AUROC (higher is better). \"Untrained\" is the same network fine-tuned from a random start.",
+ "done": {
+  "heading": "DONE: what each stage showed, and how we read it",
+  "cards": [
+   {
+    "head": "Stage A: the corpora",
+    "when": "7 to 9 Nov, no training",
+    "body": "The corpora differ, by up to 2.15 SD on a single property. PubChem is the nearest to both benchmarks, COCONUT next, both ZINC arms far. PubChem already contains 73% of BBBP and 93% of ESOL.",
+    "reading": "Composition had room to matter, and benchmark exposure had to be controlled."
+   },
+   {
+    "head": "Stage B: the yardsticks",
+    "when": "9 to 10 Nov, laptop cells",
+    "body": "One fine-tuning path for every encoder, and three baselines. The released encoder beats the untrained one on ESOL, −0.228 [−0.439, −0.018]. On BBBP, no link detected between a molecule's nearness to the corpus and its gain.",
+    "reading": "The recipe transfers. Where the gain lives is still open."
+   },
+   {
+    "head": "Stage C: corpus size",
+    "when": "8 to 15 Nov, PubChem 500 to 100,000",
+    "body": "ESOL at full labels, against the untrained encoder: no separable gain below 25,000 molecules; −0.106 [−0.190, −0.023] at 25,000; going on to 100,000 adds −0.017 [−0.064, +0.030]. BBBP: no size separates. A benchmark-free encoder is not told apart from a second seed.",
+    "reading": "Size matters up to about 25,000 molecules on ESOL. Past that we see nothing more."
+   },
+   {
+    "head": "Stage D: composition",
+    "when": "16 to 17 Nov, 360 of 360 cells",
+    "body": "At 25,000 molecules, ZINC general, ZINC NP-like and COCONUT are not told apart. 2 of the 6 registered intervals exclude zero, each by about 0.001, and none once the 6 are taken together. Two seeds of one corpus differ by more (0.044 RMSE) than two corpora do (0.036).",
+    "reading": "A null with wide intervals. Stage D could only have seen a difference of about 0.06 RMSE or more.",
+    "highlight": true
+   },
+   {
+    "head": "Across the stages",
+    "when": "the bar the protocol sets",
+    "body": "Chemprop given computed descriptors, with no pretraining, reaches 0.792 RMSE on ESOL at full labels. The PubChem 25,000 encoders of Stage C reach 0.837, the three Stage D corpora 0.863 to 0.900, the untrained encoder 0.944.",
+    "reading": "No encoder we pretrained is separably better than that baseline, in any cell."
+   }
+  ]
+ },
+ "todo": {
+  "heading": "LEFT TO DO: 18 November to the presentation",
+  "note": "Nearest deadline: check-in 2 on Thursday 19 November. It needs A1 and W2, both on cells that already exist. After it, what sets the pace is Amendment 18,\nnot the cluster: Stage E, the fourth arm and the probe all wait for it. Each box covers the days it is planned for; stacked boxes run at the same time.\nAn arrow means the second step needs the first. Nothing is computed after 29 November. Thanksgiving is 26 November.",
+  "first": "2026-11-18",
+  "last": "2026-12-10",
+  "lanes": [
+   [
+    "meetings",
+    "Meetings"
+   ],
+   [
+    "decisions",
+    "Decisions"
+   ],
+   [
+    "cluster",
+    "Cluster"
+   ],
+   [
+    "analysis",
+    "Analysis"
+   ],
+   [
+    "writing",
+    "Writing"
+   ]
+  ],
+  "milestones": [
+   {
+    "date": "2026-11-19",
+    "label": "check-in 2 on 19 Nov",
+    "ha": "left"
+   },
+   {
+    "date": "2026-11-29",
+    "label": "results frozen 29 Nov",
+    "ha": "right"
+   },
+   {
+    "date": "2026-12-01",
+    "label": "write-up due 1 Dec",
+    "ha": "left"
+   }
+  ],
+  "steps": [
+   {
+    "id": "D3",
+    "title": "Check-in 2: show Stages C and D, and ask whether a second task is expected",
+    "lane": "meetings",
+    "start": "2026-11-19",
+    "end": "2026-11-19",
+    "kind": "due",
+    "label_days": 4.5
+   },
+   {
+    "id": "D4",
+    "title": "Group presentation, on the day the course sets",
+    "lane": "meetings",
+    "start": "2026-12-01",
+    "end": "2026-12-10",
+    "kind": "critical"
+   },
+   {
+    "id": "D1",
+    "title": "Léonard reviews PR #10, signs Amendments 16, 17",
+    "lane": "decisions",
+    "start": "2026-11-18",
+    "end": "2026-11-20",
+    "kind": "slack",
+    "rows": 2,
+    "row": 0
+   },
+   {
+    "id": "D2",
+    "title": "Sign Amendment 18",
+    "lane": "decisions",
+    "start": "2026-11-19",
+    "end": "2026-11-20",
+    "kind": "critical",
+    "rows": 2,
+    "row": 1,
+    "fontsize": 7.8
+   },
+   {
+    "id": "C1",
+    "title": "Fourth arm: 3 benchmark-free PubChem encoders, about 20 GPU-hours",
+    "lane": "cluster",
+    "start": "2026-11-21",
+    "end": "2026-11-23",
+    "kind": "optional",
+    "arrows_from": [
+     "D2"
+    ]
+   },
+   {
+    "id": "A1",
+    "title": "Baseline and power tables",
+    "lane": "analysis",
+    "start": "2026-11-18",
+    "end": "2026-11-19",
+    "kind": "due",
+    "rows": 2,
+    "row": 0
+   },
+   {
+    "id": "A3",
+    "title": "Probe on the Stage D encoders",
+    "lane": "analysis",
+    "start": "2026-11-21",
+    "end": "2026-11-23",
+    "kind": "optional",
+    "rows": 2,
+    "row": 0
+   },
+   {
+    "id": "A4",
+    "title": "Score the fourth arm",
+    "lane": "analysis",
+    "start": "2026-11-24",
+    "end": "2026-11-26",
+    "kind": "optional",
+    "rows": 2,
+    "row": 0,
+    "arrows_from": [
+     "C1"
+    ]
+   },
+   {
+    "id": "A2",
+    "title": "Stage E: per-molecule analysis, exploratory",
+    "lane": "analysis",
+    "start": "2026-11-20",
+    "end": "2026-11-25",
+    "kind": "critical",
+    "rows": 2,
+    "row": 1,
+    "arrows_from": [
+     "D2"
+    ]
+   },
+   {
+    "id": "A5",
+    "title": "Léonard re-derives the new numbers",
+    "lane": "analysis",
+    "start": "2026-11-26",
+    "end": "2026-11-28",
+    "kind": "critical",
+    "rows": 2,
+    "row": 1,
+    "arrows_from": [
+     "A2",
+     "A4"
+    ]
+   },
+   {
+    "id": "W2",
+    "title": "Slides for check-in 2",
+    "lane": "writing",
+    "start": "2026-11-18",
+    "end": "2026-11-19",
+    "kind": "due",
+    "rows": 2,
+    "row": 0
+   },
+   {
+    "id": "W3",
+    "title": "Refresh the stale documents",
+    "lane": "writing",
+    "start": "2026-11-24",
+    "end": "2026-11-26",
+    "kind": "slack",
+    "rows": 2,
+    "row": 0
+   },
+   {
+    "id": "W4",
+    "title": "Write-up",
+    "lane": "writing",
+    "start": "2026-11-27",
+    "end": "2026-12-01",
+    "kind": "critical",
+    "rows": 2,
+    "row": 0,
+    "arrows_from": [
+     "A5"
+    ]
+   },
+   {
+    "id": "W5",
+    "title": "Presentation slides and rehearsal",
+    "lane": "writing",
+    "start": "2026-11-30",
+    "end": "2026-12-03",
+    "kind": "critical",
+    "rows": 2,
+    "row": 1,
+    "arrows_from": [
+     "W4"
+    ]
+   }
+  ],
+  "due_label": "has to be ready for check-in 2"
+ }
+}

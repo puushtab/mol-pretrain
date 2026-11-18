@@ -1,5 +1,10 @@
 # natural-compounds: the goal, where we are, what to do next
 
+> **Superseded on 17 November 2026.** This page describes the project on 8 November.
+> Stages A to D have since run, including all 360 Stage D cells. The results,
+> what they mean and the steps that remain are in [docs/remaining-steps.md](docs/remaining-steps.md).
+> The text below is kept as it was written.
+
 Written 8 November 2026 for Gabriel. Follows the project proposal (30 October),
 the notes from the 2 November meeting with Yuxin Xie, and the current state of
 the repository. Terms in **bold** are explained on first use and in the glossary.
