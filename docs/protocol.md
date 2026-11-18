@@ -850,3 +850,160 @@ evidence of no effect. BBBP did not separate any encoder from any other in
 Stage C and is unlikely to here. docs/open-issues.md asks whether a task nearer
 natural-product chemistry should join the panel; none has been added, and one
 may be added later only by amendment and for all nine encoders at once.
+
+### 18. Two PubChem arms at 25,000, to separate proximity from library. 18 November 2026
+
+Written on 18 November 2026 by Gabriel, with every Stage C and Stage D score in
+hand and **before any corpus of either arm was drawn**. Léonard has not signed
+it. Unlike Amendment 17, the ordering here is checkable: this amendment is
+committed before the first corpus file exists, so the git history shows the
+design preceded the draw rather than resting on a file's save time.
+
+This amendment adds arms. It changes no recipe, no split, no label budget and
+nothing about Stage C or Stage D, whose results stand as reported.
+
+**(a) Why two arms.** The clearest corpus difference in the data is one nobody
+registered. All three Stage D arms trail the Stage C PubChem encoders of the
+same size on ESOL at full labels, by 0.026 to 0.062 RMSE, and PubChem is also
+the corpus Stage A measured as nearest to both benchmarks. Neither fact can be
+claimed from what exists: the PubChem encoders kept their benchmark molecules,
+have two seeds rather than three, and are the condition the descriptor targets
+were standardised on. Worse, the explanation is confounded in every arm we have,
+because changing the library moves proximity, natural-product-likeness, the
+property profile and exposure together. Two arms separate the two questions:
+
+- `pubchem_noleak_n25000_s{0,1,2}` — PubChem, benchmark molecules removed, three
+  seeds. Removes both objections to the reference and asks whether the library
+  itself is ahead.
+- `pubchem_nearbench_noleak_n25000_s{0,1,2}` — the decile of PubChem nearest the
+  benchmarks, same removal, three seeds. Holds the library fixed and moves
+  proximity alone.
+
+**(b) How the proximity arm is defined.** `configs/corpora/pubchem_nearbench.yaml`
+keeps the top decile of the PubChem cache by each molecule's Tanimoto similarity
+to its nearest neighbour among the 3,167 canonical BBBP and ESOL structures
+(Morgan, radius 2, 2,048 bits, the study's default throughout).
+`scripts/score_benchmark_proximity.py` writes the score once per cache as a
+sidecar keyed on `source_row`; the PubChem cache parquet is not modified,
+because fourteen finished Stage C encoders were drawn from it.
+
+Two things about this definition. The direction is corpus molecule to benchmark,
+not benchmark to corpus: the table in `docs/check-in-1-report.md` section 4.2
+runs the other way and the two are not interchangeable, and only this direction
+is a per-molecule property a draw can select on. And the quantile rule is
+`zinc_nplike`'s, deliberately, so the study's two filtered arms are built the
+same way. The decile leaves a pool of about 94,000, so three draws of 25,000
+share about a quarter of their molecules pairwise — more independent than
+`zinc_nplike`, whose 49,997-molecule pool makes its three draws share about
+half. A tighter quantile would select molecules closer to the benchmarks and
+destroy that independence: the top three percent is about 28,000 molecules,
+which would make the three seeds nearly one corpus trained three times. The
+similarity cutoff the decile falls at is measured, recorded in each draw's
+`stats.json`, and was not chosen.
+
+**(c) Benchmark molecules are removed by exact canonical SMILES, as everywhere
+else.** This is a decision for comparability and against strictness, and it is
+the one a reader should press on. The alternative — removing stereo-ignored
+matches too, or everything above a similarity ceiling — would be more defensible
+in isolation and would make these two arms non-comparable with the nine that
+exist, since Stage D's removal was by exact canonical SMILES and each COCONUT
+draw accordingly kept 65 to 71 stereo-ignored matches. One exclusion rule across
+all eleven arms is worth more than a stricter rule on two of them.
+
+What that leaves in is counted rather than assumed. `prepare_corpus.py` records
+for every draw the mean nearest-benchmark similarity, the minimum, and how many
+molecules sit at exactly 1.0, above 0.9 and above 0.7. A score of exactly 1.0 is
+a molecule whose fingerprint equals a benchmark molecule's while its canonical
+SMILES does not; fingerprints ignore stereochemistry, so these are the same
+stereo-ignored matches the Stage D audit found, counted at the point the draw is
+made. The proximity arm will carry more near neighbours than any other arm in
+the study, by construction. That is the treatment, not a flaw, and the numbers
+go in the write-up beside the result.
+
+**(d) Everything else is as Stage D ran it.** Size 25,000. Descriptors
+standardised against `pubchem_n100000_s0`, byte-identical vectors, checked by
+`cmp` in `slurm/stage-d-prep.sbatch`, which runs unchanged for both arms.
+Pretraining is `configs/pretrain/chemeleon.yaml` unchanged. Fine-tuning is the
+recipe of record, Amendment 16 included, on BBBP and ESOL over the same five
+frozen splits and four label budgets, into `runs/finetune_a18/`. The untrained
+encoder, the chemprop baselines and the forest are not re-run: their cells of
+record are paired with these on the split. One consequence of the shared
+permutation is worth recording: seeds are seeded by seed alone, so
+`pubchem_noleak_n25000_s0` is the first 25,000 rows of the permutation that
+produced `pubchem_noleak_n100000_s0`, the exposure-check corpus, and is a subset
+of it.
+
+**(e) What is committed to before any score exists.** Four intervals, one
+family. Two contrasts, each at two label budgets:
+
+| | Contrast | What it isolates |
+|---|---|---|
+| P1 | `pubchem_nearbench` − `pubchem_noleak` | proximity, library held fixed |
+| P2 | `pubchem_noleak` − the mean of the three Stage D arms | library, exclusion and seed count matched |
+
+Each on ESOL, at full labels and at 500 labels, paired on the split, the three
+seeds of an arm averaged within a split first, with a 95% t-interval on the five
+differences. That is Amendment 17(e)'s rule, applied to these pairs.
+
+Both budgets are named now, and why: at full labels no Stage D arm is itself
+separable from the untrained encoder on ESOL, so the registered budget is the
+one where there is least for proximity to modulate; 500 labels is the smallest
+budget where pretraining is still detectable and the cells are not degenerate,
+unlike 50 and 100, which rest on 6 and 12 validation molecules and whose recipe
+is post hoc. Declaring both costs power and is the price of not choosing after
+the fact. The family is four intervals; both the unadjusted intervals and
+Bonferroni over four are reported, as Stage D reported Bonferroni over its six.
+Stage D's six contrasts remain their own family and are not re-pooled with these.
+
+BBBP at both budgets, ESOL at 50 and 100 labels, both arms against the untrained
+encoder, against the released checkpoint, against Chemprop with descriptors and
+against the two-seed `pubchem_n25000` reference are all secondary and reported
+in full. No arm, seed or cell is dropped on its result. The detection limit of
+this design is to be computed by a script in the repo before it is quoted;
+Stage D's was about 0.06 RMSE at full labels and these arms have the same shape.
+
+**(f) What these arms cannot be used to claim.** The proximity arm is selected
+using the benchmark structures, their test molecules included. No label enters
+pretraining — the objective is descriptor regression — so this is not label
+leakage in the sense of "Three things that get called leakage" above. It is
+deliberate maximal structure exposure. Therefore:
+
+| Do not write | Because |
+|---|---|
+| that `pubchem_nearbench` is a better encoder, or report it on a leaderboard | its corpus was chosen using the test molecules' structures; the arm exists to measure an effect, not to win |
+| "PubChem is the better corpus", if P2 is negative | it would be one library at one size on one task, with NP-likeness, property profile and proximity still moving together |
+| that proximity is ruled out, if P1 covers zero | a decile is a coarse treatment and the interval will be about as wide as Stage D's |
+| that either arm tests the natural-product hypothesis | neither does; it is tested, exploratorily, by Stage E |
+
+**(g) The prediction, written before the numbers exist.** If what pretraining
+buys at this scale is coverage of the test chemistry, P1 is negative on ESOL and
+so is P2. If the library carries something that is not proximity, P2 is negative
+and P1 covers zero. If both cover zero, the Stage D null extends to PubChem, and
+the study's bound on the whole corpus effect at 25,000 molecules covers every
+library we have looked at — which is a cleaner result than the one Stage D gave
+alone, and is the outcome this amendment is most likely to produce.
+
+**(h) Stop rule.** Six pretrainings, about 40 GPU-hours on `mit_preemptable`.
+If fewer than three encoders of an arm have finished by **26 November**, that arm
+is reported as incomplete, its figures are stamped preliminary and nothing is
+claimed from it; the other arm is reported if it is complete. No arm is extended
+with a fourth seed, and no seed is replaced, whatever the scores look like.
+
+**(i) Correction to Amendment 17, dated 18 November 2026.** Amendment 17's
+closing paragraph says "the seed-to-seed interval on ESOL at full labels in
+Stage C was about ±0.08 RMSE, so a composition effect smaller than that will not
+be seen and a null is not evidence of no effect." The second half stands. The
+±0.08 is wrong as a detection limit: it is the half-width of one seed pair's
+interval at 100,000 molecules. The registered Stage D intervals have half-widths
+0.035, 0.057 and 0.027, and the design detects about 0.06 RMSE at 80% power.
+Amendment 17 is not edited in place; this is the correction of record, and the
+write-up must not quote the ±0.08 sentence.
+
+**(j) What this amendment does not do.** No split is added: five scaffold splits
+stand, and fifteen more were considered and refused in
+`docs/remaining-steps.md` because extending the design after seeing a p of 0.044
+is not a correction. No second task is added here; whether one is expected is a
+question for check-in 2 on 19 November and any answer comes by a further
+amendment, for every encoder at once. Stage E, the frozen probe on the Stage D
+encoders, and which sensitivity intervals are printed are not settled here and
+belong to the next amendment, drafted after check-in 2.

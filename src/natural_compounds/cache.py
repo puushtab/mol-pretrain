@@ -29,6 +29,10 @@ RDLogger.DisableLog("rdApp.*")
 CHUNK = 50_000
 SCHEMA = ["smiles", "source_row", "n_fragments", "n_chars"]
 
+# The column the benchmark-proximity sidecar carries. Named here so the script
+# that writes it and the filter that reads it cannot disagree.
+BENCHMARK_SCORE_COLUMN = "benchmark_nn_similarity"
+
 
 def cache_dir() -> Path:
     return DATA_PROCESSED / "cache"
@@ -40,6 +44,24 @@ def cache_path(corpus: str) -> Path:
 
 def manifest_path(corpus: str) -> Path:
     return cache_dir() / f"{corpus}.manifest.json"
+
+
+def proximity_path(corpus: str) -> Path:
+    """Where the benchmark-proximity score of a cache lives.
+
+    A sidecar, not a column, which is the opposite of how natural-product
+    likeness is stored. `add_np_likeness` rewrites the cache parquet, and that
+    was safe for zinc_general because nothing had been drawn from it yet. The
+    pubchem cache has already produced every Stage C encoder, so rewriting it
+    would alter a file fourteen finished pretrainings were drawn from, for the
+    sake of one new column. Keyed on `source_row`, which is what the cache and
+    every provenance file already key on.
+    """
+    return cache_dir() / f"{corpus}.benchmark_proximity.parquet"
+
+
+def proximity_manifest_path(corpus: str) -> Path:
+    return cache_dir() / f"{corpus}.benchmark_proximity.manifest.json"
 
 
 def _canonicalise_chunk(args: tuple[list[str], int]) -> list[tuple[str, int, int, int]]:

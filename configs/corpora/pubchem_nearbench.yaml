@@ -1,0 +1,52 @@
+# The decile of PubChem structurally nearest the benchmark molecules.
+# Registered as Amendment 18(b). Arm, not reference.
+#
+# What it is for. The clearest corpus difference in the data is one nobody
+# registered: all three Stage D arms trail the Stage C PubChem encoders of the
+# same size on ESOL, and PubChem is also the corpus Stage A measured as nearest
+# to both benchmarks. Those two facts are confounded in every existing arm,
+# because changing the library changes proximity, NP-likeness, the property
+# profile and exposure together. This arm holds the library fixed and moves
+# proximity alone: same cache as `pubchem`, same size, same exclusion rule, same
+# three seeds, selected on one score.
+#
+# Against `pubchem_noleak` at the same size it is a within-library contrast, so
+# a difference between the two is proximity and nothing else. That pair is the
+# primary comparison of Amendment 18(e).
+#
+# The score is each PubChem molecule's Tanimoto similarity to its nearest
+# neighbour among the 3,167 canonical BBBP and ESOL structures, written by
+# scripts/score_benchmark_proximity.py. Note the direction: this is a property
+# of the corpus molecule, which is what a draw can select on. The table in
+# docs/check-in-1-report.md section 4.2 runs the other way and the two are not
+# interchangeable.
+#
+# Why a decile and not something tighter. The quantile rule is `zinc_nplike`'s,
+# deliberately, so the two filtered arms are built the same way. A decile of
+# PubChem is about 94,000 molecules, so three draws of 25,000 share about a
+# quarter of their molecules pairwise. Tighter would select molecules closer to
+# the benchmarks and make the three draws nearly the same corpus: the top three
+# percent is 28,000 molecules, which would leave seeds overlapping by nine
+# tenths and reproduce the weakness docs/remaining-steps.md already records
+# against `zinc_nplike`. The cutoff this decile falls at is measured, recorded
+# in the draw's stats.json, and is not a round number anybody chose.
+#
+# What it cannot be used for. This arm is selected using the benchmark
+# structures, test molecules included. No label enters pretraining, so it is not
+# label leakage, but it is the largest structure exposure in the study by
+# construction. It can bound how much of a corpus effect is coverage. It can
+# never be quoted as a better encoder, and a win for it is not a win for
+# PubChem. Amendment 18(f) carries that wording.
+name: pubchem_nearbench
+# Same molecules as pubchem, so it reads that cache rather than canonicalising
+# the same million again. Only the filter differs, which is the comparison.
+cache_from: pubchem
+source: data/raw/pubchem/cleaned_pubchem_1MM.smiles
+format: smiles_list
+smiles_column: null
+reference: https://zenodo.org/records/15733575
+# No clean: block, matching configs/corpora/pubchem.yaml. The file is clean
+# upstream and the three arms drawn from this cache have to differ by the filter
+# alone.
+filter:
+  benchmark_proximity_top_quantile: 0.1

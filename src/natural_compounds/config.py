@@ -56,8 +56,13 @@ def check(cfg: dict[str, Any], path: Path) -> None:
             raise ValueError(f"{path}: split fractions must sum to 1")
 
     if kind == "corpora":
-        quantile = (cfg.get("filter") or {}).get("np_likeness_top_quantile")
-        if quantile is not None and not 0 < quantile <= 1:
-            raise ValueError(f"{path}: np_likeness_top_quantile must be in (0, 1]")
+        filters = cfg.get("filter") or {}
+        for key in ("np_likeness_top_quantile", "benchmark_proximity_top_quantile"):
+            quantile = filters.get(key)
+            if quantile is not None and not 0 < quantile <= 1:
+                raise ValueError(f"{path}: {key} must be in (0, 1]")
+        unknown = set(filters) - {"np_likeness_top_quantile", "benchmark_proximity_top_quantile"}
+        if unknown:
+            raise ValueError(f"{path}: unknown filter key(s) {sorted(unknown)}")
         if cfg.get("format", "csv") == "csv" and not cfg.get("smiles_column"):
             raise ValueError(f"{path}: a csv corpus needs a smiles_column")

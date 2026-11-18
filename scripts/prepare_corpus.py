@@ -39,7 +39,16 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from natural_compounds.cache import apply_clean, load, resolve
+from natural_compounds.cache import (
+    BENCHMARK_SCORE_COLUMN as SCORE_COLUMN,
+)
+from natural_compounds.cache import (
+    apply_clean,
+    load,
+    proximity_manifest_path,
+    proximity_path,
+    resolve,
+)
 from natural_compounds.chem import canonicalize
 from natural_compounds.config import load_config
 from natural_compounds.experiments import Condition, condition_dict, expand_conditions
@@ -62,6 +71,59 @@ def filter_np_like(frame: pl.DataFrame, cfg: dict, stats: dict) -> pl.DataFrame:
     kept = scored.filter(pl.col("np_likeness") >= cutoff)
     stats["np_likeness_mean_after"] = float(kept["np_likeness"].mean())
     stats["after_np_filter"] = len(kept)
+    return kept
+
+
+def filter_benchmark_proximity(frame: pl.DataFrame, cfg: dict, stats: dict) -> pl.DataFrame:
+    """Keep the top quantile by nearest-neighbour similarity to the benchmarks.
+
+    Amendment 18(b). The score is a sidecar parquet written by
+    `score_benchmark_proximity.py` and keyed on `source_row`, so this joins
+    rather than reading a column.
+
+    The result is re-sorted on `source_row` afterwards. The draw is a seeded
+    permutation of this frame's *positions*, so anything that reorders the frame
+    changes which molecules a seed selects. A join is not required to preserve
+    the order of its left side, and the cache is in `source_row` order, so
+    sorting restores the one order this corpus can be redrawn from.
+    """
+    quantile = (cfg.get("filter") or {}).get("benchmark_proximity_top_quantile")
+    if quantile is None:
+        return frame
+
+    cache = resolve(cfg)
+    path = proximity_path(cache)
+    if not path.exists():
+        raise SystemExit(
+            f"{cfg['name']} filters on proximity to the benchmarks and {path} is missing. Run:\n"
+            f"  uv run python scripts/score_benchmark_proximity.py configs/corpora/{cache}.yaml "
+            f"--task bbbp --task esol"
+        )
+
+    scores = pl.read_parquet(path)
+    joined = frame.join(scores, on="source_row", how="left")
+    unscored = int(joined[SCORE_COLUMN].is_null().sum())
+    if unscored:
+        raise SystemExit(
+            f"{unscored} of {len(frame)} molecules have no proximity score. The sidecar at "
+            f"{path} was written against a different build of the {cache} cache, so its "
+            f"source_row keys no longer line up. Rescore it with --force."
+        )
+
+    scored = joined.filter(pl.col(SCORE_COLUMN).is_not_nan())
+    cutoff = float(scored[SCORE_COLUMN].quantile(1 - quantile))
+    kept = scored.filter(pl.col(SCORE_COLUMN) >= cutoff).sort("source_row")
+
+    manifest = json.loads(proximity_manifest_path(cache).read_text())
+    stats["benchmark_proximity"] = {
+        "quantile": quantile,
+        "cutoff": cutoff,
+        "pool": len(kept),
+        "mean_before": float(scored[SCORE_COLUMN].mean()),
+        "mean_after": float(kept[SCORE_COLUMN].mean()),
+        "scored_against": manifest.get("tasks"),
+        "benchmark_molecules_scored": manifest.get("benchmark_molecules"),
+    }
     return kept
 
 
@@ -99,6 +161,7 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     frame = apply_clean(frame, cfg.get("clean"))
     stats["after_cleaning"] = len(frame)
     frame = filter_np_like(frame, cfg, stats)
+    frame = filter_benchmark_proximity(frame, cfg, stats)
 
     benchmark: set[str] = set()
     if task_names:
@@ -128,6 +191,24 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     # grows with the corpus, so it moves together with the variable under study.
     if benchmark:
         stats["sample_benchmark_overlap"] = int(sample["smiles"].is_in(benchmark).sum())
+
+    # What exclusion by exact canonical SMILES leaves behind. Amendment 18(c)
+    # keeps that rule, the rule every other arm used, so a draw selected for
+    # proximity keeps its near neighbours of benchmark molecules and this says
+    # how many rather than leaving the write-up to assume. A score of exactly
+    # 1.0 is a molecule whose Morgan fingerprint equals a benchmark molecule's
+    # while its canonical SMILES does not: fingerprints ignore stereochemistry,
+    # so these are the stereo-ignored matches the Stage D audit found in
+    # COCONUT, counted here at the point the draw is made.
+    if SCORE_COLUMN in sample.columns:
+        scores = sample[SCORE_COLUMN]
+        stats["sample_benchmark_proximity"] = {
+            "mean": float(scores.mean()),
+            "min": float(scores.min()),
+            "at_1.0": int((scores >= 1.0).sum()),
+            "over_0.9": int((scores > 0.9).sum()),
+            "over_0.7": int((scores > 0.7).sum()),
+        }
 
     out_dir = DATA_PROCESSED / "corpora"
     out_dir.mkdir(parents=True, exist_ok=True)
