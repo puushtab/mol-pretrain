@@ -922,8 +922,10 @@ a molecule whose fingerprint equals a benchmark molecule's while its canonical
 SMILES does not. Fingerprints ignore stereochemistry, so stereoisomers land
 there, but so does any other pair Morgan at radius 2 cannot separate: it is a
 fingerprint tie and therefore an upper bound on the stereo-ignored matches, not
-a count of them, and not the measurement the Stage D audit made for COCONUT.
-See 18(k). The proximity arm will carry more near neighbours than any other arm in
+a count of them. The stereo-ignored count itself is measured separately, by
+stripping stereochemistry from both sides, which is the measurement the Stage D
+audit made for COCONUT; see 18(k)(2) for both numbers. The proximity arm will
+carry more near neighbours than any other arm in
 the study, by construction. That is the treatment, not a flaw, and the numbers
 go in the write-up beside the result.
 
@@ -1028,14 +1030,20 @@ these were made.
 1. **The reference set is 2,999 structures, not 3,167.** Corrected in 18(b),
    where the arithmetic that produced the wrong number is also stated.
 
-2. **"Stereo-ignored match" was the wrong name for the count in 18(c).** The
-   statistic is a fingerprint tie: equal Morgan fingerprints at radius 2 and
-   2,048 bits, unequal canonical SMILES. Stereoisomers are the main cause and
-   not the only one, so it is an upper bound on stereo-ignored matches, and it
-   is not the measurement the Stage D audit used to get COCONUT's 65 to 71. The
-   two are comparable as orders of magnitude and no closer. The counts
-   themselves are unchanged: about 525 per draw in the decile arm against about
-   50 in the control arm.
+2. **"Stereo-ignored match" was the wrong name for the count in 18(c), and the
+   right count has since been measured.** The statistic first reported was a
+   fingerprint tie: equal Morgan fingerprints at radius 2 and 2,048 bits,
+   unequal canonical SMILES. Stereoisomers are its main cause and not its only
+   one, so it is an upper bound on stereo-ignored matches rather than a count of
+   them. Rather than leave it a bound, `scripts/describe_a18_corpora.py` now
+   strips stereochemistry from both sides and compares canonical SMILES, which
+   is the measurement the Stage D audit used for COCONUT. Like for like, per
+   25,000 molecules: the control arm holds **30 to 47** stereo-ignored matches
+   against COCONUT's 65 to 71, and the decile arm holds **362 to 410**, about
+   six times COCONUT's rate. The remainder of each tie count — 9 to 15 and 129
+   to 151 — is the fingerprint's own collision rate. So the tie count overstated
+   the decile arm's exposure by roughly a quarter, and the corrected numbers are
+   what the write-up uses.
 
 3. **P1 does not move proximity alone.** The decile nearest the benchmarks is
    also a narrower slice of chemical space than a uniform tenth, so internal

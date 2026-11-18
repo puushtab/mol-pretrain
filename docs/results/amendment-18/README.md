@@ -107,6 +107,14 @@ Verified on 18 November, before any pretraining started:
   comparing them should know.
 - The decile cutoff and pool size were measured, not chosen: 0.4815 and 95,437
   before exclusion, 93,044 after.
+- `code.sha256` was re-recorded after the draws were made. One file changed
+  between the two recordings, `prepare_corpus.py`, which gained a guard
+  requiring the proximity sidecar to have been scored against the same tasks the
+  draw excludes. The guard is an added check: the quantile, the cutoff, the
+  ordering and the permutation are untouched, and the condition it tests holds
+  for all six draws, both being `bbbp` and `esol`. So the corpora on disk are
+  what the recorded code produces. Nothing else in the fifteen files changed,
+  and no pretraining had started when the digests were rewritten.
 
 Not checked, and stated as such:
 
