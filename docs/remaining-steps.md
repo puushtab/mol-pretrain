@@ -228,7 +228,36 @@ reverses at 50 and 100 labels, nothing of the kind shows on BBBP, and COCONUT is
 behind the PubChem encoders in every third. It is a lead, and it needs data
 nobody has looked at to become more than that.
 
-### One new run, only if Amendment 18 is signed by 20 November
+### Superseded on 18 November: two arms launched, not one
+
+> **What actually happened.** On 18 November, at Gabriel's decision, Amendment
+> 18 was written and **two** arms were launched rather than the one this section
+> proposed: `pubchem_noleak` as described below, and `pubchem_nearbench_noleak`,
+> the decile of PubChem nearest the benchmarks, which moves proximity with the
+> library held fixed. Twenty jobs, about 40 GPU-hours. The amendment was
+> committed before any corpus was drawn, so the ordering is in the git history
+> rather than resting on a file's save time.
+>
+> Two departures from the plan below, both deliberate and both recorded in the
+> amendment. The primary comparison is four intervals, not one: two contrasts
+> (P1 proximity, P2 library) each at full labels and at 500 labels, because at
+> full labels no Stage D arm is itself separable from the untrained encoder and
+> there is little there for proximity to modulate. And **Léonard had not signed
+> Amendment 18 when the jobs were submitted**, as he had not signed 16 or 17.
+> The 20 November condition in this section was therefore not met; the arms ran
+> anyway, on the same single-author basis as Stage D.
+>
+> Benchmark molecules are removed by exact canonical SMILES, the rule every
+> other arm used. On a draw selected for proximity that leaves about 525
+> stereo-ignored matches per 25,000 molecules against about 50 in the control
+> arm and 65 to 71 in a COCONUT draw. That is the treatment, it is counted per
+> draw in `docs/results/amendment-18/corpora.csv`, and Amendment 18(f) forbids
+> reporting the decile arm as a better encoder.
+>
+> Status, tables and the verification are in
+> [results/amendment-18/README.md](results/amendment-18/README.md); the analysis
+> is `scripts/amendment_18_arms.py`. The rest of this section is kept as it was
+> written on 17 November.
 
 **A fourth arm: PubChem with the benchmark molecules removed, 25,000 molecules,
 three seeds.** The clearest corpus difference in the data is every Stage D arm
@@ -299,9 +328,9 @@ step it needs ends, the hand-over happens within that day.
 | D1 | Review pull request #10. Read and sign Amendments 16 and 17. Both are on `main` unsigned. Planned for 18–20 Nov; the hard limit is the freeze. | 18–20 Nov | Léonard | W1 |
 | D2 | Write and sign Amendment 18: Stage E and what was already looked at; the fourth arm and its single primary contrast; the probe as a secondary; which sensitivity intervals are shown; a dated correction of the "±0.08" sentence in Amendment 17; a record that no split is added, and of what check-in 2 answered about a second task (if one is asked for, it comes by a further amendment, for every encoder at once). It is drafted after the check-in, because 18 November goes to A1 and W2. | 19–20 Nov | both | W1, D3 |
 | A2 | Stage E, item 3 above. | 20–25 Nov | Gabriel | D2 |
-| C1 | Optional. Fourth arm: draw, describe, pretrain, fine-tune. If preempted it may run to 26 Nov; A4 is then done the same day, or the arm is reported as incomplete. | 21–23 Nov | cluster | D2 |
+| C1 | ~~Optional. Fourth arm~~ **Done 18 Nov, as two arms under Amendment 18, not waiting on D2.** Draw, describe, pretrain, fine-tune: 20 jobs submitted 18 Nov 00:2x. Amendment 18(h) is the stop rule — an arm short of three encoders on 26 Nov is reported incomplete and nothing is claimed from it. | 18–26 Nov | cluster | — |
 | A3 | Optional. Probe on the Stage D encoders, after fixing encoder discovery. | 21–23 Nov | Gabriel | D2 |
-| A4 | Optional. Score the fourth arm: extend the arms and pairs in `scripts/stage_d_composition.py`, regenerate tables and figures. | 24–26 Nov | Gabriel | C1 |
+| A4 | Score the two new arms. Written on 18 Nov as `scripts/amendment_18_arms.py`, which imports its statistics from `stage_d_composition.py` and leaves the registered Stage D numbers untouched rather than extending that script in place. Run it when the twelve fine-tunes land; check `sacct` and the cell count first. | 19–26 Nov | Gabriel | C1 |
 | W3 | Refresh the stale documents listed below. | 24–26 Nov | Gabriel | A1 |
 | A5 | Recompute, independently and from `predictions.csv`, every number added since 15 November. Review and merge. These are Thanksgiving Thursday to Saturday. | 26–28 Nov | Léonard | A2, A4 |
 | — | **Results frozen.** Everything merged, Amendments 16 to 18 signed, no job in the queue. | 29 Nov | both | D1, D2, A5 |
@@ -325,8 +354,11 @@ signed on 20 November, which is still the date the fourth arm needs.
 
 ## Open items
 
-- **Unsigned.** Amendments 16 and 17 are on `main` and Léonard has signed
-  neither. PR #9, which put them there, had no human review.
+- **Unsigned.** Amendments 16, 17 and now 18 are on a branch or on `main` and
+  Léonard has signed none of them. PR #9, which put 16 and 17 on `main`, had no
+  human review. Amendment 18's two arms were submitted to the cluster on 18
+  November without his signature, which is a departure from the condition this
+  page set on 17 November and is recorded where that condition was written.
 - **Half a sentence in Amendment 17 is wrong and cannot be edited in place.**
   "... the seed-to-seed interval on ESOL at full labels in Stage C was about
   ±0.08 RMSE, so a composition effect smaller than that will not be seen and a
