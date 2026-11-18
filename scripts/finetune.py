@@ -204,7 +204,15 @@ IDENTITY = (
     "checkpoint_sha256",
     "descriptors",
     "freeze_epochs",
+    "protocol_amendment",
 )
+
+# A field a manifest does not carry is unknown, and the caller is told so
+# rather than told nothing. The exception is a field whose absence has a
+# settled meaning: nothing recorded `protocol_amendment` before Amendment 16
+# gave it one, so absent reads as nought, and a cell that ran under nought is
+# not the cell this run would write.
+ABSENT_MEANS = {"protocol_amendment": 0}
 
 
 def identity_mismatch(run: Path, expected: dict) -> list[str]:
@@ -227,9 +235,13 @@ def identity_mismatch(run: Path, expected: dict) -> list[str]:
     for key in IDENTITY:
         if key not in expected:
             continue
-        before, now = found.get(key), expected[key]
-        if before != now:
-            out.append(f"{key}: on disk {before!r}, this run {now!r}")
+        now = expected[key]
+        if key in found or key in ABSENT_MEANS:
+            before = found.get(key, ABSENT_MEANS.get(key))
+            if before != now:
+                out.append(f"{key}: on disk {before!r}, this run {now!r}")
+        else:
+            out.append(f"{key}: absent from the manifest, this run {now!r}")
     return out
 
 
@@ -748,13 +760,17 @@ def main() -> None:
                     "n_test": int(len(test_idx)),
                     "max_epochs": args.max_epochs,
                     "freeze_epochs": args.freeze_epochs or None,
+                    "protocol_amendment": AMENDMENT,
                 }
                 if (run / "predictions.csv").exists():
                     # The old manifests carry no train_seed and no per-file
                     # digest, so a directory written before this change cannot
                     # answer the question. Say so rather than pretend it passed.
                     differs = identity_mismatch(run, known)
-                    legacy = [d for d in differs if d.startswith(("train_seed", "split_file"))]
+                    # On the absence of the field, not on its name. A digest
+                    # that is present and disagrees is the thing this check
+                    # exists to catch, and filtering by name swallowed it.
+                    legacy = [d for d in differs if "absent from the manifest" in d]
                     real = [d for d in differs if d not in legacy]
                     if real:
                         refused += 1
@@ -765,7 +781,10 @@ def main() -> None:
                     note = ", pre-dates the identity fields" if legacy else ""
                     print(f"  {run.name}: done already{note}")
                     continue
-                if cfg["task_type"] == "classification" and len(set(target[train_idx])) < 2:
+                if (
+                    classification
+                    and min(len(set(target[train_idx])), len(set(target[val_idx]))) < 2
+                ):
                     print(f"  {run.name}: skipped, the draw holds one class only")
                     continue
 

@@ -531,3 +531,55 @@ def test_the_training_seed_moves_the_weights_and_the_split_seed_does_not():
     c, _ = encoders.untrained(1, d_h=16, depth=2)
     assert torch.equal(a.W_h.weight, b.W_h.weight)
     assert not torch.equal(a.W_h.weight, c.W_h.weight)
+
+
+def test_a_cell_from_the_previous_recipe_is_refused(tmp_path):
+    """A manifest with no protocol_amendment ran under amendment nought.
+
+    Every cell of runs/stage_b3 is one. Resuming that directory under the
+    current code would have reported them done already and trained whatever
+    was missing under Amendment 16, so the directory would hold two
+    protocols and say nothing about it.
+    """
+    import json as _json
+
+    (tmp_path / "predictions.csv").write_text("row_index,y_true,y_pred\n")
+    (tmp_path / "manifest.json").write_text(_json.dumps({"arm": "released", "n_train": 50}))
+
+    differs = finetune.identity_mismatch(
+        tmp_path, {"arm": "released", "n_train": 50, "protocol_amendment": 16}
+    )
+    assert differs == ["protocol_amendment: on disk 0, this run 16"]
+    assert "absent from the manifest" not in differs[0]
+
+
+def test_a_digest_that_disagrees_is_not_filed_under_legacy(tmp_path):
+    """Present and different is the case the check exists for.
+
+    The resume filter used to drop every line whose field was named
+    train_seed or split_file, on the argument that old manifests lack them.
+    A split file regenerated under another RDKit lands in the same two
+    fields, and was waved through.
+    """
+    import json as _json
+
+    (tmp_path / "manifest.json").write_text(
+        _json.dumps({"split_file_sha256": "70ad97cca6da4158", "train_seed": 0})
+    )
+
+    differs = finetune.identity_mismatch(
+        tmp_path, {"split_file_sha256": "0000000000000000", "train_seed": 0}
+    )
+    assert differs == ["split_file_sha256: on disk '70ad97cca6da4158', this run '0000000000000000'"]
+    assert not [d for d in differs if "absent from the manifest" in d]
+
+
+def test_a_field_an_old_manifest_never_carried_is_only_a_note(tmp_path):
+    """Absent is not disagreement, and must not refuse a legitimate resume."""
+    import json as _json
+
+    (tmp_path / "manifest.json").write_text(_json.dumps({"arm": "released"}))
+
+    differs = finetune.identity_mismatch(tmp_path, {"arm": "released", "train_seed": 2})
+    assert differs == ["train_seed: absent from the manifest, this run 2"]
+    assert all("absent from the manifest" in d for d in differs)

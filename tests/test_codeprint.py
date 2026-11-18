@@ -59,3 +59,36 @@ def test_a_rename_changes_the_fingerprint():
         renamed.update(running_name.encode())
         renamed.update(files[name].encode())
     assert renamed.hexdigest()[:16] != code_fingerprint()
+
+
+def test_no_caller_overwrites_the_whole_tree_digest():
+    """`code_sha256` belongs to manifest.py and to nothing else.
+
+    build_manifest_fields spreads **details last, so a caller passing the same
+    key wins silently. That happened once: baseline_forest.py kept passing its
+    own per-file dict after the merge, forest manifests came back with a dict
+    where every other cell had a string, and verify_campaign.py then died on
+    `unhashable type: 'dict'` while building the set of fingerprints. Nothing
+    pointed at it except the crash, four hundred cells later.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for path in [*(root / "scripts").glob("*.py"), *(root / "src").rglob("*.py")]:
+        if path.name == "manifest.py":
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r'\bcode_sha256\s*=|["\']code_sha256["\']\s*:', line):
+                offenders.append(f"{path.relative_to(root)}:{number}")
+    assert not offenders, "only manifest.py may set code_sha256: " + ", ".join(offenders)
+
+
+def test_the_digest_a_manifest_carries_is_hashable():
+    """verify_campaign puts every cell's digest in a set, so a dict crashes it."""
+    from natural_compounds.manifest import build_manifest_fields
+
+    fields = build_manifest_fields(arm="forest", code_files_sha256={"a.py": "1"})
+    assert isinstance(fields["code_sha256"], str)
+    assert len({fields["code_sha256"]}) == 1

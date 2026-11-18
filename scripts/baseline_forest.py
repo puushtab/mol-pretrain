@@ -41,6 +41,12 @@ from natural_compounds.splits import label_budget, split_file_digest, splits_fin
 # forest with enough trees is famously insensitive to the rest.
 TREES = 500
 
+# docs/protocol.md, Amendment 16. A forest has no epochs, so the floor means
+# nothing here. The two-class validation draw does, because this arm trains on
+# train and validation together, and a cell written before it is a different
+# cell.
+AMENDMENT = 16
+
 # Read once, when this process loaded the code, as scripts/finetune.py does.
 CODE_SHA256 = {
     name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()[:16]
@@ -59,6 +65,34 @@ def features(smiles: list[str]) -> tuple[np.ndarray, np.ndarray]:
     full = np.zeros((len(smiles), prints.shape[1]), dtype=np.float64)
     full[keep] = prints
     return full, keep
+
+
+def identity_mismatch(run: Path, expected: dict) -> list[str]:
+    """Whether the cell on disk is the cell this run would write.
+
+    `if predictions.csv exists: skip` is right after a preemption and wrong
+    once anything underneath has moved. Amendment 16 changed this arm's draw,
+    so a cell written before it is a different cell, and the per-file digest
+    says whether the split underneath is the same one. Without this the arm
+    reports a complete campaign made of two protocols.
+    """
+    path = run / "manifest.json"
+    if not path.exists():
+        return ["no manifest.json beside the predictions"]
+    try:
+        found = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return ["manifest.json is not readable"]
+    out = []
+    for key, now in expected.items():
+        # Nothing recorded protocol_amendment before Amendment 16 gave it one,
+        # so absent reads as nought here, as it does in finetune.py.
+        before = found.get(key, 0 if key == "protocol_amendment" else None)
+        if before is None:
+            out.append(f"{key}: absent from the manifest, this run {now!r}")
+        elif before != now:
+            out.append(f"{key}: on disk {before!r}, this run {now!r}")
+    return out
 
 
 def fit_cell(task_type: str, x_train, y_train, x_test, seed: int) -> np.ndarray:
@@ -123,8 +157,25 @@ def main() -> None:
             train_idx = np.concatenate([drawn_train, drawn_val])
             label = "all" if count is None else count
             run = args.out / f"forest__{task}__split{split_seed}__n{label}"
+            file_sha = split_file_digest(splits_dir, split_seed)
             if (run / "predictions.csv").exists():
-                print(f"  {run.name}: done already")
+                differs = identity_mismatch(
+                    run,
+                    {
+                        "protocol_amendment": AMENDMENT,
+                        "split_file_sha256": file_sha,
+                        "n_train": int(len(train_idx)),
+                    },
+                )
+                absent = [d for d in differs if "absent from the manifest" in d]
+                real = [d for d in differs if d not in absent]
+                if real:
+                    print(f"  {run.name}: REFUSED, on disk it is a different cell")
+                    for line in real:
+                        print(f"      {line}")
+                    continue
+                note = ", pre-dates the identity fields" if absent else ""
+                print(f"  {run.name}: done already{note}")
                 continue
             if cfg["task_type"] == "classification" and len(set(target[train_idx])) < 2:
                 print(f"  {run.name}: skipped, the draw holds one class only")
@@ -165,7 +216,7 @@ def main() -> None:
                         # since 16 November and the forest did not, which left
                         # eighty cells of a thousand with no per-cell
                         # provenance at all.
-                        split_file_sha256=split_file_digest(splits_dir, split_seed),
+                        split_file_sha256=file_sha,
                         trees=TREES,
                         fingerprint="morgan r2 2048 bits",
                         used_validation_labels=True,
@@ -173,8 +224,8 @@ def main() -> None:
                         # Amendment 16 changes for it is the draw, and this
                         # says whether this cell's draw is one that changed.
                         val_draw_repaired=bool(repaired),
-                        protocol_amendment=16,
-                        code_sha256=CODE_SHA256,
+                        protocol_amendment=AMENDMENT,
+                        code_files_sha256=CODE_SHA256,
                     ),
                     indent=2,
                 )
