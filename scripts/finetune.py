@@ -28,8 +28,11 @@ import argparse
 import hashlib
 import json
 import math
+import os
+import platform
 import re
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -39,7 +42,7 @@ from natural_compounds.config import load_config
 from natural_compounds.encoders import SPECS, load
 from natural_compounds.manifest import build_manifest_fields
 from natural_compounds.paths import DATA_PROCESSED, ROOT, RUNS, resolve_source
-from natural_compounds.splits import label_budget, splits_fingerprint
+from natural_compounds.splits import label_budget, split_file_digest, splits_fingerprint
 
 # docs/protocol.md, "Fine-tuning budget", as amended. Early stopping decides,
 # not the cap. Measured convergence with the cap far above it: chemprop needs up
@@ -163,6 +166,71 @@ def condition_fields(arm: str, init: str) -> dict:
         "size": int(match.group(2)),
         "pretrain_seed": int(match.group(3)),
     }
+
+
+def machine_fields() -> dict:
+    """Which machine ran this, and under which job.
+
+    The campaign of 10 November recorded the device and nothing else, so a cell
+    could say `cpu` and not say whether that was a laptop or a compute node.
+    Two arms on two machines is a paired difference with the machines inside
+    it, and the only way to notice afterwards is to have written it down.
+    """
+    return {
+        "hostname": platform.node(),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID"),
+        "slurm_cpus_per_task": os.environ.get("SLURM_CPUS_PER_TASK"),
+    }
+
+
+# What makes two runs of a cell the same run. A finished directory is reused
+# only when every one of these matches what the current invocation would
+# produce. Anything else and the cell is refused rather than silently skipped.
+IDENTITY = (
+    "arm",
+    "task",
+    "label_count",
+    "seed",
+    "train_seed",
+    "split_file_sha256",
+    "n_train",
+    "n_val",
+    "n_test",
+    "max_epochs",
+    "encoder_params",
+    "checkpoint_sha256",
+    "descriptors",
+    "freeze_epochs",
+)
+
+
+def identity_mismatch(run: Path, expected: dict) -> list[str]:
+    """How a finished cell differs from the one we were about to run.
+
+    `if predictions.csv exists: skip` is right when a job was preempted and
+    wrong when anything changed underneath. A split file regenerated with a
+    different RDKit, a label budget whose rule moved, a checkpoint swapped: all
+    three leave the old file in place and the sweep reports a complete campaign
+    made of two different experiments.
+    """
+    path = run / "manifest.json"
+    if not path.exists():
+        return ["no manifest.json beside the predictions"]
+    try:
+        found = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return ["manifest.json is not readable"]
+    out = []
+    for key in IDENTITY:
+        if key not in expected:
+            continue
+        before, now = found.get(key), expected[key]
+        if before != now:
+            out.append(f"{key}: on disk {before!r}, this run {now!r}")
+    return out
 
 
 def parseable(smiles: list[str]) -> np.ndarray:
@@ -369,6 +437,29 @@ def freeze_callback(epochs: int, passes: int = 1):
     return Freeze()
 
 
+def history_callback():
+    """Validation loss at the end of every epoch.
+
+    One hundred labels leaves twelve molecules to early-stop on, and six at
+    fifty. Whether that is enough to select a checkpoint is a question about
+    the shape of the curve, and the curve was thrown away with the checkpoint.
+    This keeps it. A few hundred bytes a cell against a 105 MB checkpoint.
+    """
+    from lightning.pytorch import Callback
+
+    class History(Callback):
+        def __init__(self):
+            self.rows: list[dict] = []
+
+        def on_validation_epoch_end(self, trainer, module):
+            if trainer.sanity_checking:
+                return
+            metrics = {k: float(v) for k, v in trainer.callback_metrics.items()}
+            self.rows.append({"epoch": int(trainer.current_epoch), **metrics})
+
+    return History()
+
+
 def fit_cell(
     task_cfg: dict,
     init: str,
@@ -378,15 +469,25 @@ def fit_cell(
     val_idx: np.ndarray,
     test_idx: np.ndarray,
     split_seed: int,
+    train_seed: int,
     max_epochs: int,
     accelerator: str,
     descriptors: np.ndarray | None = None,
     freeze_epochs: int = 0,
-) -> tuple[np.ndarray, np.ndarray | None, dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, list[dict], dict]:
     """Train one model and predict the test subset.
 
-    Returns the predictions, the logits they came from for a classification
-    cell and None otherwise, and what the cell did.
+    Two seeds, not one. `split_seed` chooses the molecules, through the frozen
+    split file and through the label draw made before this function is called.
+    `train_seed` chooses everything else: the initialisation of an untrained
+    encoder, the task head, the dataloader shuffle. Until now one number did
+    both, so a result that moved between splits could not be told apart from a
+    result that moved between two runs on the same split. Passing the split
+    seed as the train seed reproduces the old behaviour exactly.
+
+    Returns test predictions, validation predictions, the logits the test
+    predictions came from for a classification cell and None otherwise, the
+    learning curve, and what it did.
     """
     import torch
     from chemprop.data import build_dataloader
@@ -395,8 +496,8 @@ def fit_cell(
     from scipy.special import expit
 
     classification = task_cfg["task_type"] == "classification"
-    pl.seed_everything(split_seed, workers=True)
-    block, agg, where = load(init, seed=split_seed)
+    pl.seed_everything(train_seed, workers=True)
+    block, agg, where = load(init, seed=train_seed)
 
     features = None if descriptors is None else usable_descriptors(descriptors, train_idx)
     train_set = dataset(smiles, target, train_idx, features)
@@ -428,8 +529,10 @@ def fit_cell(
     extra = 0 if features is None else int(features.shape[1])
     steps = recipe_in_steps(len(train_idx), max_epochs)
     passes = steps["passes_per_epoch"]
+    # The training seed, not the split seed. The head and the untrained encoder
+    # follow it, so two repeats of one cell differ in training luck alone.
     model = build_model(
-        classification, block, agg, where["d_h"] + extra, scaler, split_seed, WARMUP * passes
+        classification, block, agg, where["d_h"] + extra, scaler, train_seed, WARMUP * passes
     )
 
     train_loader = build_dataloader(train_set, batch_size=BATCH, shuffle=True, num_workers=0)
@@ -440,6 +543,7 @@ def fit_cell(
     if len(train_loader) != math.ceil(len(train_idx) / BATCH):
         raise SystemExit(f"a pass is {len(train_loader)} batches for {len(train_idx)} molecules")
 
+    started = time.monotonic()
     with tempfile.TemporaryDirectory() as scratch:
         # Kept outside the run directory on purpose. One checkpoint is about
         # 105 MB and a full sweep is hundreds of cells, so only the predictions
@@ -448,7 +552,8 @@ def fit_cell(
             dirpath=scratch, monitor="val_loss", mode="min", save_top_k=1, save_last=False
         )
         stopper = EarlyStopping(monitor="val_loss", mode="min", patience=PATIENCE)
-        callbacks = [keeper, stopper]
+        curve = history_callback()
+        callbacks = [keeper, stopper, curve]
         if freeze_epochs > 0:
             callbacks.append(freeze_callback(freeze_epochs, passes))
         # One epoch of the recipe is `passes` passes of the trainer. Validation
@@ -482,6 +587,10 @@ def fit_cell(
         best_step = int(found.group(1)) if found else None
         # Early stopping leaves the last model in memory, not the best one.
         batches = trainer.predict(model, test_loader, ckpt_path=keeper.best_model_path)
+        # The same model on the validation rows. Model selection ran on twelve
+        # molecules at a hundred labels, and without these there is no way to
+        # ask afterwards how well it chose.
+        val_batches = trainer.predict(model, val_loader, ckpt_path=keeper.best_model_path)
 
     raw = torch.cat([b.squeeze(-1) for b in batches]).flatten().numpy()
     # The logit stays in the float32 it was computed in, so it is written and
@@ -489,7 +598,12 @@ def fit_cell(
     # sigmoid has room: float32 reaches 1.0 at a logit of 17, float64 at 37.
     logits = raw if classification else None
     predictions = expit(raw.astype(np.float64)) if classification else raw
+    # The validation set is scored by the same best checkpoint and through the
+    # same sigmoid, so a validation prediction is on the scale of a test one.
+    val_raw = torch.cat([b.squeeze(-1) for b in val_batches]).flatten().numpy()
+    val_predictions = expit(val_raw.astype(np.float64)) if classification else val_raw
     where |= {
+        "wall_seconds": round(time.monotonic() - started, 1),
         # In the recipe's epochs, which is what max_epochs and patience are in.
         "epochs_run": passes_run // passes,
         "passes_run": passes_run,
@@ -497,7 +611,10 @@ def fit_cell(
         "best_step": best_step,
         **steps,
         "protocol_amendment": AMENDMENT,
-        "code_sha256": dict(CODE_SHA256),
+        # The per-file digests, under their own key. manifest.py records a
+        # digest over all twenty-one files as code_sha256, and writing both to
+        # one key would silently drop whichever landed first.
+        "code_files_sha256": dict(CODE_SHA256),
         # `is not None`: a validation loss of exactly zero is a score.
         "best_val_loss": (
             float(keeper.best_model_score) if keeper.best_model_score is not None else None
@@ -518,7 +635,7 @@ def fit_cell(
         "device": str(trainer.strategy.root_device),
         "torch_threads": int(torch.get_num_threads()),
     }
-    return predictions, logits, where
+    return predictions, val_predictions, logits, curve.rows, where
 
 
 def main() -> None:
@@ -526,6 +643,17 @@ def main() -> None:
     parser.add_argument("task_config", type=Path)
     parser.add_argument("--init", default="scratch", help=f"one of {SPECS}, or a checkpoint path")
     parser.add_argument("--split-seed", type=int, action="append", default=None)
+    parser.add_argument(
+        "--train-seed",
+        type=int,
+        action="append",
+        default=None,
+        help="initialisation and training seed, repeatable. Separate from the "
+        "split seed, which keeps choosing the molecules and the label draw. "
+        "Omit it and the split seed does both, which is what the campaign of "
+        "10 November did. Given, the cell is named <arm>__<task>__splitS__tK__nL "
+        "so the two campaigns can never share a row.",
+    )
     parser.add_argument("--label-count", action="append", default=None)
     parser.add_argument("--out", type=Path, default=RUNS / "finetune")
     parser.add_argument("--accelerator", default="auto")
@@ -581,82 +709,132 @@ def main() -> None:
     )
     print(f"{arm} on {task}: {len(seeds)} split seed(s), {len(counts)} label count(s)")
 
+    machine = machine_fields()
+    refused = 0
     for split_seed in seeds:
         split = json.loads((splits_dir / f"seed{split_seed}.json").read_text())
         test_idx = np.asarray([i for i in split["test"] if readable[i]])
-        for count in counts:
-            drawn = (
-                [i for i in split["train"] if readable[i]],
-                [i for i in split["val"] if readable[i]],
-                count,
-                split_seed,
-            )
-            train_idx, val_idx = label_budget(*drawn, classes=target if classification else None)
-            repaired = not np.array_equal(val_idx, label_budget(*drawn)[1])
-            label = "all" if count is None else count
-            run = args.out / f"{arm}__{task}__split{split_seed}__n{label}"
-            if (run / "predictions.csv").exists():
-                print(f"  {run.name}: done already")
-                continue
-            if classification and min(len(set(target[train_idx])), len(set(target[val_idx]))) < 2:
-                print(f"  {run.name}: skipped, the draw holds one class only")
-                continue
-
-            predictions, logits, where = fit_cell(
-                cfg,
-                args.init,
-                smiles,
-                target,
-                train_idx,
-                val_idx,
-                test_idx,
-                split_seed,
-                args.max_epochs,
-                args.accelerator,
-                computed,
-                args.freeze_epochs,
-            )
-
-            columns = {"row_index": test_idx, "y_true": target[test_idx], "y_pred": predictions}
-            if logits is not None:
-                columns["y_logit"] = logits
-                where |= {
-                    "n_val_positive": int((target[val_idx] == 1).sum()),
-                    "n_val_negative": int((target[val_idx] == 0).sum()),
-                }
-            where["val_draw_repaired"] = bool(repaired)
-
-            run.mkdir(parents=True, exist_ok=True)
-            # No float_format. pandas writes the shortest text that reads back
-            # to the same number, and y_true has to stay the label in the
-            # dataset to the last bit, which a fixed seventeen digits does not
-            # survive in pandas' default reader.
-            pd.DataFrame(columns).to_csv(run / "predictions.csv", index=False)
-            (run / "manifest.json").write_text(
-                json.dumps(
-                    build_manifest_fields(
-                        **condition_fields(arm, args.init),
-                        seed=split_seed,
-                        task=task,
-                        label_count=count,
-                        arm=arm,
-                        method="finetune",
-                        n_train=int(len(train_idx)),
-                        n_val=int(len(val_idx)),
-                        n_test=int(len(test_idx)),
-                        splits_sha256=splits_sha,
-                        **where,
-                    ),
-                    indent=2,
+        file_sha = split_file_digest(splits_dir, split_seed)
+        for train_seed in args.train_seed or [split_seed]:
+            for count in counts:
+                # The label draw stays on the split seed whatever the training
+                # seed is, so repeats of a cell see the same labelled molecules
+                # and the spread between them is training noise and nothing else.
+                drawn = (
+                    [i for i in split["train"] if readable[i]],
+                    [i for i in split["val"] if readable[i]],
+                    count,
+                    split_seed,
                 )
-                + "\n"
-            )
-            print(
-                f"  {run.name}: {where['epochs_run']} epochs, {where['steps_run']} steps, "
-                f"best at step {where['best_step']}, {len(test_idx)} scored",
-                flush=True,
-            )
+                train_idx, val_idx = label_budget(
+                    *drawn, classes=target if classification else None
+                )
+                # Amendment 16's two-class validation draw. A cell records
+                # whether its own draw had to be repaired.
+                repaired = not np.array_equal(val_idx, label_budget(*drawn)[1])
+                label = "all" if count is None else count
+                stamp = "" if args.train_seed is None else f"__t{train_seed}"
+                run = args.out / f"{arm}__{task}__split{split_seed}{stamp}__n{label}"
 
+                known = {
+                    "arm": arm,
+                    "task": task,
+                    "label_count": count,
+                    "seed": split_seed,
+                    "train_seed": train_seed,
+                    "split_file_sha256": file_sha,
+                    "n_train": int(len(train_idx)),
+                    "n_val": int(len(val_idx)),
+                    "n_test": int(len(test_idx)),
+                    "max_epochs": args.max_epochs,
+                    "freeze_epochs": args.freeze_epochs or None,
+                }
+                if (run / "predictions.csv").exists():
+                    # The old manifests carry no train_seed and no per-file
+                    # digest, so a directory written before this change cannot
+                    # answer the question. Say so rather than pretend it passed.
+                    differs = identity_mismatch(run, known)
+                    legacy = [d for d in differs if d.startswith(("train_seed", "split_file"))]
+                    real = [d for d in differs if d not in legacy]
+                    if real:
+                        refused += 1
+                        print(f"  {run.name}: REFUSED, on disk it is a different cell")
+                        for line in real:
+                            print(f"      {line}")
+                        continue
+                    note = ", pre-dates the identity fields" if legacy else ""
+                    print(f"  {run.name}: done already{note}")
+                    continue
+                if cfg["task_type"] == "classification" and len(set(target[train_idx])) < 2:
+                    print(f"  {run.name}: skipped, the draw holds one class only")
+                    continue
+
+                predictions, val_predictions, logits, curve, where = fit_cell(
+                    cfg,
+                    args.init,
+                    smiles,
+                    target,
+                    train_idx,
+                    val_idx,
+                    test_idx,
+                    split_seed,
+                    train_seed,
+                    args.max_epochs,
+                    args.accelerator,
+                    computed,
+                    args.freeze_epochs,
+                )
+
+                columns = {
+                    "row_index": test_idx,
+                    "y_true": target[test_idx],
+                    "y_pred": predictions,
+                }
+                if logits is not None:
+                    columns["y_logit"] = logits
+                    where |= {
+                        "n_val_positive": int((target[val_idx] == 1).sum()),
+                        "n_val_negative": int((target[val_idx] == 0).sum()),
+                    }
+                where["val_draw_repaired"] = bool(repaired)
+
+                run.mkdir(parents=True, exist_ok=True)
+                # No float_format. pandas writes the shortest text that reads
+                # back to the same number, and y_true has to stay the label in
+                # the dataset to the last bit.
+                pd.DataFrame(columns).to_csv(run / "predictions.csv", index=False)
+                pd.DataFrame(
+                    {"row_index": val_idx, "y_true": target[val_idx], "y_pred": val_predictions}
+                ).to_csv(run / "val_predictions.csv", index=False)
+                if curve:
+                    pd.DataFrame(curve).to_csv(run / "history.csv", index=False)
+                (run / "manifest.json").write_text(
+                    json.dumps(
+                        build_manifest_fields(
+                            **condition_fields(arm, args.init),
+                            **known,
+                            label_seed=split_seed,
+                            method="finetune",
+                            splits_sha256=splits_sha,
+                            **machine,
+                            **{k: v for k, v in where.items() if k not in known},
+                        ),
+                        indent=2,
+                    )
+                    + "\n"
+                )
+                print(
+                    f"  {run.name}: {where['epochs_run']} epochs, "
+                    f"{where['steps_run']} steps, best at step {where['best_step']}, "
+                    f"{where['wall_seconds']}s, {len(test_idx)} scored",
+                    flush=True,
+                )
+
+    if refused:
+        raise SystemExit(
+            f"\n{refused} cell(s) on disk are not the cell this run would produce.\n"
+            "Nothing was overwritten. Move or delete them, or point --out somewhere else."
+        )
     print(f"\nwrote runs under {args.out}")
     print(f"summarise with: uv run python scripts/evaluate.py {args.out}")
 

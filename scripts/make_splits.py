@@ -1,9 +1,18 @@
 """Generate and freeze the splits for a task, one file per seed.
 
     uv run python scripts/make_splits.py configs/tasks/bbbp.yaml
+    uv run python scripts/make_splits.py configs/tasks/bbbp.yaml --seed 5 --seed 6
 
 Written once and reused by every condition. Runs are then paired, and a
 difference between two models cannot come from a difference in the split.
+
+A seed file that already exists is left alone. Extending a campaign with more
+splits means writing new files beside the frozen ones, and a rewrite is the one
+operation here that can silently invalidate everything already measured: the
+splits are deterministic given this task file and this RDKit, so a different
+RDKit on a different machine regenerates seed 0 as a different split and every
+earlier cell is then paired against molecules it never saw. Nothing downstream
+would notice except the digest. `--force` exists and should make you uneasy.
 """
 
 from __future__ import annotations
@@ -23,6 +32,18 @@ from natural_compounds.splits import make_split, realised_fractions, splits_prov
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        action="append",
+        default=None,
+        help="write only these seeds, instead of the task config's. Repeatable.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="rewrite seed files that already exist. See the header of this file.",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -39,12 +60,19 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sizes = {}
-    for seed in cfg["seeds"]:
+    fractions = None
+    kept = 0
+    for seed in args.seed or cfg["seeds"]:
+        target = out_dir / f"seed{seed}.json"
+        if target.exists() and not args.force:
+            frozen = json.loads(target.read_text())
+            sizes[str(seed)] = [len(frozen[k]) for k in ("train", "val", "test")]
+            kept += 1
+            print(f"seed {seed}: already frozen, left alone")
+            continue
         train, val, test = make_split(smiles, cfg["split"], seed, dates)
         sizes[str(seed)] = [len(train), len(val), len(test)]
-        (out_dir / f"seed{seed}.json").write_text(
-            json.dumps({"train": train, "val": val, "test": test})
-        )
+        target.write_text(json.dumps({"train": train, "val": val, "test": test}))
         fractions = realised_fractions((train, val, test))
         dropped = len(smiles) - len(train) - len(val) - len(test)
         print(
@@ -53,8 +81,10 @@ def main() -> None:
             + (f", {dropped} unparseable row(s) in no subset" if dropped else "")
         )
 
+    if kept:
+        print(f"\n{kept} seed file(s) already existed and were not touched.")
     requested = tuple(cfg["split"]["fractions"])
-    if abs(fractions[2] - requested[2]) > 0.1:
+    if fractions is not None and abs(fractions[2] - requested[2]) > 0.1:
         print(
             f"\nwarning: test came out at {fractions[2]:.2f} against a requested "
             f"{requested[2]:.2f}. A few scaffold groups are large enough to distort "

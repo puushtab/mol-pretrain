@@ -35,7 +35,7 @@ from natural_compounds.chem import fingerprint_matrix
 from natural_compounds.config import load_config
 from natural_compounds.manifest import build_manifest_fields
 from natural_compounds.paths import DATA_PROCESSED, ROOT, RUNS, resolve_source
-from natural_compounds.splits import label_budget, splits_fingerprint
+from natural_compounds.splits import label_budget, split_file_digest, splits_fingerprint
 
 # Fixed for every cell. The protocol allows no per-condition search, and a
 # forest with enough trees is famously insensitive to the rest.
@@ -157,6 +157,15 @@ def main() -> None:
                         n_val=0,
                         n_test=int(len(test_idx)),
                         splits_sha256=splits_sha,
+                        # The digest of the one split file this cell read.
+                        # The directory digest above moves whenever a seed is
+                        # added, so it cannot say whether this cell and the
+                        # neural cells it is paired against saw the same
+                        # molecules. This can. The neural path has recorded it
+                        # since 16 November and the forest did not, which left
+                        # eighty cells of a thousand with no per-cell
+                        # provenance at all.
+                        split_file_sha256=split_file_digest(splits_dir, split_seed),
                         trees=TREES,
                         fingerprint="morgan r2 2048 bits",
                         used_validation_labels=True,

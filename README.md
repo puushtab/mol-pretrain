@@ -52,13 +52,19 @@ instead of a claim in a paper.
 configs/corpora/      where a corpus comes from and how it is cleaned
 configs/pretrain/     CheMeleon's recipe, read off their source. Do not tune.
 configs/tasks/        one downstream benchmark each
+configs/screening/    the candidates a benchmark screen chooses between
 configs/experiments/  the grid: which corpora, which sizes, which seeds
 scripts/              prepare_corpus -> compute_descriptors -> pretrain -> finetune -> evaluate
                       analyze_corpora and make_splits run before any of that
-src/natural_compounds/  chem, splits, nplikeness, experiments, manifest, metrics
-slurm/                session.sh, descriptors.sbatch (CPU array), pretrain.sbatch
-docs/                 plan.md, protocol.md, corpora.md, open-issues.md, setup guides
+                      Stage B adds screen_benchmark, stage_b2_plan, baseline_forest,
+                      prelaunch_check and verify_campaign
+src/natural_compounds/  chem, splits, nplikeness, experiments, manifest, metrics, codeprint
+slurm/                session.sh, descriptors.sbatch (CPU array), pretrain.sbatch,
+                      stage-b2.sbatch (the campaign array), deploy.sh, campaign_status.sh
+docs/                 plan.md, protocol.md, corpora.md, open-issues.md, setup guides,
+                      and the stage-b-* series: plan, inventory, runbook, results
 external/chemeleon    the reference implementation, pinned by commit
+runs/                 every result. Gitignored in full, so none of it is in git.
 ```
 
 ## Pipeline
@@ -114,6 +120,31 @@ on the cluster. Stage E, the per-molecule analysis, is not built yet. The
 results, what they mean and the steps that remain are in
 [docs/remaining-steps.md](docs/remaining-steps.md).
 
+## Stage B
+
+The campaign the conclusions rest on is `runs/stage_b3`: three benchmarks by
+ten scaffold splits by three training seeds by four neural arms, plus a random
+forest baseline. That is 1,560 cells and about 146 hours of compute on MIT ORCD
+Engaging. Every cell records a digest of the code that produced it and all of
+them carry the same value. `scripts/verify_campaign.py` runs twelve checks over
+a finished campaign and they pass.
+
+What it measures is the benefit of a pretrained initialisation against the same
+architecture untrained, paired on the split. Three baselines sit beside it: a
+standard chemprop D-MPNN with 38 times fewer parameters, the same with Mordred
+descriptors, and the forest.
+
+That campaign predates Amendment 16. At fifty and a hundred labels an epoch was
+one or two optimiser steps, so those cells ran about eighteen and thirty-eight
+steps in total and the epoch floor exists because of it. The five hundred and
+full-label cells already met the floor, so they are unaffected.
+
+`docs/stage-b-inventory.md` says what every campaign and job holds and carries
+the commands that reproduce the consolidated one. Read it before trusting a
+number, because two earlier campaigns are preserved beside it and they are not
+interchangeable. `docs/stage-b2-results.md` is the write-up, retractions
+included.
+
 Read docs/open-issues.md before starting Stage C or D. Two issues there have to
 be settled first and both have measurements behind them.
 
@@ -121,8 +152,11 @@ be settled first and both have measurements behind them.
 
 - The corpus is the only variable. Same model, objective, recipe, splits, seeds
   and fine-tuning budget everywhere.
-- A run records the commit and the package versions that produced it. Without
-  that it is an anecdote rather than a result.
+- A run records the code and the package versions that produced it. Without
+  that it is an anecdote rather than a result. The commit is not enough: the
+  cluster tree is rsynced without `.git`, so a whole campaign once recorded
+  `commit: null`. `src/natural_compounds/codeprint.py` digests the bytes
+  instead. It crosses machines.
 - Report spread across seeds. Never a single number.
 - Benchmark overlap is measured, not silently removed. The released checkpoint
   did not remove it and we compare against that checkpoint.

@@ -126,6 +126,10 @@ def collect(runs_dir: Path) -> pd.DataFrame:
                 # apart and a paired difference is reconstructible.
                 "arm": manifest.get("arm", manifest["corpus"]),
                 "pretrain_seed": manifest.get("pretrain_seed"),
+                # The initialisation and training seed, separate from the split
+                # seed since 16 November. Absent on everything written before,
+                # where one number did both jobs.
+                "train_seed": manifest.get("train_seed"),
                 "method": manifest.get("method"),
                 "max_epochs": manifest.get("max_epochs"),
                 "n_train": manifest.get("n_train"),
@@ -133,6 +137,10 @@ def collect(runs_dir: Path) -> pd.DataFrame:
                 "n_test": manifest.get("n_test"),
                 "epochs_run": manifest.get("epochs_run"),
                 "splits_sha256": manifest.get("splits_sha256"),
+                "split_file_sha256": manifest.get("split_file_sha256"),
+                "hostname": manifest.get("hostname"),
+                "device": manifest.get("device"),
+                "wall_seconds": manifest.get("wall_seconds"),
                 # 0 is the recipe as first registered. No manifest said which
                 # recipe it was before Amendment 16 gave it a reason to.
                 "protocol_amendment": manifest.get("protocol_amendment", 0),
@@ -153,13 +161,42 @@ def collect(runs_dir: Path) -> pd.DataFrame:
 
 
 def summarise(results: pd.DataFrame) -> pd.DataFrame:
+    """Mean and spread per cell, over splits rather than over runs.
+
+    Repeated training seeds are averaged inside their split before anything is
+    aggregated, for the same reason `paired` does it. Ten splits run three
+    times each is ten numbers and not thirty, and feeding thirty to the
+    interval divides the standard error by the square root of three for
+    replicates that share a split and share its molecules.
+
+    `train_sd` carries the spread between those repeats, which answers the
+    other question: how much of a cell is training luck rather than chemistry.
+    """
+    work = results.copy()
+    for column in ("train_seed", "pretrain_seed"):
+        if column not in work.columns:
+            work[column] = np.nan
+
+    within = ["task", "corpus", "size", "label_count", "metric", "seed", "pretrain_seed"]
+    collapsed = (
+        work.groupby(within, dropna=False)
+        .agg(
+            value=("value", "mean"),
+            train_sd=("value", lambda v: v.std(ddof=1) if len(v) > 1 else np.nan),
+            n_train_seeds=("train_seed", lambda s: max(s.nunique(dropna=False), 1)),
+        )
+        .reset_index()
+    )
+
     summary = (
-        results.groupby(["task", "corpus", "size", "label_count", "metric"], dropna=False)
+        collapsed.groupby(["task", "corpus", "size", "label_count", "metric"], dropna=False)
         .agg(
             mean=("value", "mean"),
             std=("value", "std"),
             count=("value", "count"),
             n_splits=("seed", "nunique"),
+            n_train_seeds=("n_train_seeds", "max"),
+            train_sd=("train_sd", "mean"),
             # dropna would report zero draws for every arm that has no
             # pretraining seed, which is every Stage B arm.
             n_pretrain_seeds=("pretrain_seed", lambda s: max(s.nunique(dropna=False), 1)),
@@ -184,6 +221,36 @@ def uneven_test_sets(results: pd.DataFrame) -> list[str]:
         if sizes.nunique() > 1:
             where = f"{key[0]} labels={key[1]} split={key[2]}"
             problems.append(f"{where}: arms scored different numbers of molecules, {dict(sizes)}")
+    return problems
+
+
+def mixed_machines(results: pd.DataFrame) -> list[str]:
+    """Cells whose arms did not run on the same machine.
+
+    A paired difference between two arms on two machines carries the
+    difference between the machines inside it. The campaign of 10 November
+    recorded only `cpu` or `cuda`, which cannot tell a laptop from a compute
+    node, so this check had nothing to read. It reports rather than refuses:
+    mixing may be deliberate, and a cross-device pair of the same cell is how
+    you measure what the device is worth.
+    """
+    problems = []
+    if "hostname" not in results.columns:
+        return problems
+    work = results.copy()
+    if "train_seed" not in work.columns:
+        work["train_seed"] = np.nan
+    # The unit is the training seed, not the split. One array task is one
+    # (task, split, training seed) and runs every arm of it on one node, which
+    # is what the pairing needs. Two training seeds of the same split land on
+    # different nodes by design, and grouping on the split alone reported that
+    # as a fault on every cell of the campaign.
+    keys = ["task", "label_count", "seed", "train_seed"]
+    for key, block in work.groupby(keys, dropna=False):
+        hosts = set(block["hostname"].dropna())
+        if len(hosts) > 1:
+            where = f"{key[0]} labels={key[1]} split={key[2]} train={key[3]}"
+            problems.append(f"{where}: arms ran on {len(hosts)} machines, {sorted(hosts)}")
     return problems
 
 
@@ -221,6 +288,13 @@ def paired(results: pd.DataFrame, baseline: str) -> pd.DataFrame:
     An arm with two pretraining draws contributes both, each paired against the
     same baseline run. They are two draws of one condition and not two splits,
     so `count` here is also not a count of independent replicates.
+
+    Repeated training seeds are averaged inside their split before anything is
+    differenced. Five splits run three times each is five numbers and not
+    fifteen, and feeding fifteen to the interval would divide the standard
+    error by the square root of three for replicates that share a split. The
+    spread between those repeats is reported on its own as `train_sd`, since it
+    answers a different question: how much of this is training luck.
     """
     if "arm" not in results.columns or baseline not in set(results["arm"]):
         return pd.DataFrame()
@@ -231,6 +305,19 @@ def paired(results: pd.DataFrame, baseline: str) -> pd.DataFrame:
     # refuses outright. Joining on a string copy sidesteps it, and the real
     # column is carried through for the output.
     work["_labels"] = work["label_count"].astype(str)
+    for column in ("train_seed", "pretrain_seed"):
+        if column not in work.columns:
+            work[column] = np.nan
+
+    within = ["task", "_labels", "metric", "arm", "seed", "pretrain_seed"]
+    collapsed = work.groupby(within, dropna=False).agg(
+        value=("value", "mean"),
+        train_sd=("value", lambda v: v.std(ddof=1) if len(v) > 1 else np.nan),
+        n_train_seeds=("train_seed", lambda s: max(s.nunique(dropna=False), 1)),
+        label_count=("label_count", "first"),
+    )
+    work = collapsed.reset_index()
+
     keys = ["task", "_labels", "seed", "metric"]
     reference = (
         work[work["arm"] == baseline].groupby(keys, dropna=False)["value"].mean().rename("baseline")
@@ -249,6 +336,8 @@ def paired(results: pd.DataFrame, baseline: str) -> pd.DataFrame:
             std=("difference", "std"),
             count=("difference", "count"),
             n_splits=("seed", "nunique"),
+            n_train_seeds=("n_train_seeds", "max"),
+            train_sd=("train_sd", "mean"),
         )
         .reset_index()
         .drop(columns="_labels")
@@ -301,12 +390,34 @@ def main() -> None:
         )
     for task, block in results.groupby("task"):
         shas = set(block["splits_sha256"].dropna())
-        if len(shas) > 1:
-            raise SystemExit(
-                f"the {task} runs were scored against {len(shas)} different split sets "
-                f"{sorted(shas)}.\nThey are not paired on anything. Copy one set of splits "
-                "everywhere and re-run whichever arm used the other."
+        if len(shas) <= 1:
+            continue
+        # The directory digest covers every seed file in the folder, so adding
+        # a sixth split moves it for the five that came before. What the
+        # pairing actually needs is that two arms of one cell read the same
+        # file, and the per-file digest says that directly. Fall back to it
+        # before refusing, since the old failure forced a rerun of work that
+        # was never wrong.
+        per_file = block.dropna(subset=["split_file_sha256"])
+        covered = len(per_file) == len(block)
+        clashes = [
+            f"split {seed}: {sorted(set(rows['split_file_sha256']))}"
+            for seed, rows in per_file.groupby("seed")
+            if rows["split_file_sha256"].nunique() > 1
+        ]
+        if covered and not clashes:
+            print(
+                f"  note: the {task} runs carry {len(shas)} directory digests, which is what "
+                "adding split seeds does. Every cell read the same file as its pair."
             )
+            continue
+        raise SystemExit(
+            f"the {task} runs were scored against {len(shas)} different split sets "
+            f"{sorted(shas)}.\nThey are not paired on anything. Copy one set of splits "
+            "everywhere and re-run whichever arm used the other."
+            + ("\n" + "\n".join(clashes) if clashes else "")
+            + ("" if covered else "\nSome cells pre-date split_file_sha256 and cannot be checked.")
+        )
     budgets = set(results["max_epochs"].dropna())
     if len(budgets) > 1:
         raise SystemExit(
@@ -332,6 +443,8 @@ def main() -> None:
             )
 
     for gap in uneven_test_sets(results):
+        print(f"  ! {gap}")
+    for gap in mixed_machines(results):
         print(f"  ! {gap}")
 
     results["method_filter"] = args.method or "none"

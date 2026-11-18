@@ -9,5 +9,8 @@ metric: rmse
 split:
   type: scaffold
   fractions: [0.8, 0.1, 0.1]
-seeds: [0, 1, 2, 3, 4]
+# Ten since 16 November. Seeds 5 to 9 were written beside the frozen five
+# and the five were left byte-identical. A script that falls back to this
+# list rather than taking --split-seed was covering half the campaign.
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 label_counts: [50, 100, 500, null]
