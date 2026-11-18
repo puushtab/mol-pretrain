@@ -43,10 +43,10 @@ Tanimoto on Morgan fingerprints, radius 2, 2,048 bits, from each corpus
 molecule to its nearest neighbour among the 2,999 canonical BBBP and ESOL
 structures.
 
-| | pool drawn from | mean similarity | at exactly 1.0 | above 0.9 | above 0.7 |
-|---|---|---|---|---|---|
-| `pubchem_noleak` | 941,893 | 0.351 | 44–56 | 52–72 | 272–317 |
-| `pubchem_nearbench_noleak` | 93,044 | 0.584 | 513–541 | 625–661 | 2,912–3,016 |
+| | pool drawn from | mean similarity | fingerprint ties | of those, stereo-ignored | collisions | above 0.9 | above 0.7 |
+|---|---|---|---|---|---|---|---|
+| `pubchem_noleak` | 941,893 | 0.351 | 44–56 | **30–47** | 9–15 | 52–72 | 272–317 |
+| `pubchem_nearbench_noleak` | 93,044 | 0.584 | 513–541 | **362–410** | 129–151 | 625–661 | 2,912–3,016 |
 | whole PubChem cache, for reference | 944,286 | 0.353 | — | — | — |
 
 Three things to read off it.
@@ -62,13 +62,30 @@ counted rather than assumed.** Amendment 18(c) keeps that rule because every
 other arm in the study used it: Stage D's removal was by exact canonical SMILES
 too, which is why each COCONUT draw kept 65 to 71 stereo-ignored matches. A
 molecule scoring exactly 1.0 has a fingerprint identical to a benchmark
-molecule's but a different canonical SMILES; fingerprints ignore
-stereochemistry, so these are stereo-ignored matches. The benchmark-free arm
-keeps about 50 of them in 25,000 molecules, which is COCONUT's rate. The decile
-arm keeps about 525, roughly 2.1 percent of itself. That is the largest
-structure exposure in the study and it is the treatment, not a defect — but the
-write-up has to say it, and it is why Amendment 18(f) forbids reporting this arm
-as a better encoder.
+molecule's but a different canonical SMILES. Fingerprints ignore
+stereochemistry, so stereoisomers land here, but so does any other pair Morgan
+at radius 2 and 2,048 bits cannot separate. That makes the tie count a
+**fingerprint tie**: an upper bound on stereo-ignored matches, not a count of
+them.
+
+The two are separated rather than left as a bound. Stripping stereochemistry
+from both sides and comparing canonical SMILES gives the measurement the Stage D
+audit made for COCONUT, so the comparison is like for like:
+
+- the **benchmark-free arm** keeps **30 to 47** stereo-ignored matches per
+  25,000 molecules, against 65 to 71 in a COCONUT draw — about half COCONUT's
+  rate, and an ordinary arm by this measure;
+- the **nearest-decile arm** keeps **362 to 410**, roughly six times COCONUT's
+  rate and 1.5 percent of itself.
+
+The remainder of each tie count, 9 to 15 and 129 to 151, is the fingerprint's
+own collision rate: distinct molecules radius-2 Morgan cannot tell apart. About
+a quarter of the decile arm's ties are collisions rather than stereoisomers,
+which is why the tie count alone would have overstated exposure by that much.
+
+The decile arm is still the largest structure exposure in the study, and that is
+the treatment rather than a defect — but the write-up has to say it, and it is
+why Amendment 18(f) forbids reporting this arm as a better encoder.
 
 **The three seeds of the decile arm are real draws.** They share 26.6 to 27.2
 percent of their molecules pairwise, measured, against about half for
@@ -96,9 +113,21 @@ Not checked, and stated as such:
 - No effect of the remaining near matches on any score has been measured. The
   Stage C exposure check, at 100,000 molecules, could not separate the removal
   of 260 benchmark molecules from a seed-to-seed difference.
-- Descriptor standardisation against `pubchem_n100000_s0` is the frozen Stage C
-  reference, so both arms are trained on the objective the size curve was. Both
-  arms are PubChem draws and the reference is a PubChem draw; whether that gives
-  a PubChem arm an advantage the Stage D arms did not have is not something this
-  campaign can test, and Amendment 18(e) names the comparison against the
-  Stage D arms as secondary to P1 for that reason.
+- **P2 is confounded and stays primary anyway.** Descriptor standardisation is
+  against `pubchem_n100000_s0`, the frozen Stage C reference, so every arm is
+  trained on the objective the size curve was. But that reference is itself a
+  PubChem draw: it is matched to P2's minuend and not to its subtrahend, so a
+  PubChem arm may be favoured on the pretraining objective for a reason that has
+  nothing to do with the library being better. Amendment 18(e) registers all
+  four intervals as one primary family and that stands — the confound bounds
+  what P2 *means*, it does not demote it. P1 is free of this: both its arms are
+  PubChem draws standardised against the same PubChem reference, which is why P1
+  and not P2 is the clean contrast. An earlier version of this line said 18(e)
+  made the Stage D comparison secondary; it does not, and that was a
+  contradiction between this page and the amendment.
+- **P1 does not move proximity alone either.** Taking the decile nearest the
+  benchmarks also narrows the corpus: a tenth of PubChem chosen by similarity to
+  one target set is less internally diverse than a uniform tenth. Proximity and
+  diversity move together in P1, as NP-likeness, property profile, exposure and
+  proximity move together across the Stage D arms. P1 is the tightest contrast
+  in the study, not a clean single-variable experiment.

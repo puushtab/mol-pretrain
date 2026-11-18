@@ -74,7 +74,9 @@ def filter_np_like(frame: pl.DataFrame, cfg: dict, stats: dict) -> pl.DataFrame:
     return kept
 
 
-def filter_benchmark_proximity(frame: pl.DataFrame, cfg: dict, stats: dict) -> pl.DataFrame:
+def filter_benchmark_proximity(
+    frame: pl.DataFrame, cfg: dict, stats: dict, task_names: list[str]
+) -> pl.DataFrame:
     """Keep the top quantile by nearest-neighbour similarity to the benchmarks.
 
     Amendment 18(b). The score is a sidecar parquet written by
@@ -115,6 +117,17 @@ def filter_benchmark_proximity(frame: pl.DataFrame, cfg: dict, stats: dict) -> p
     kept = scored.filter(pl.col(SCORE_COLUMN) >= cutoff).sort("source_row")
 
     manifest = json.loads(proximity_manifest_path(cache).read_text())
+    # The score defines the arm, so the benchmarks it was computed against have
+    # to be the benchmarks this draw excludes. A sidecar scored against one task
+    # would otherwise select a decile of PubChem near BBBP alone and the draw
+    # would still be filed, described and pretrained as the registered arm.
+    scored_against = sorted(manifest.get("tasks") or [])
+    if scored_against != sorted(task_names):
+        raise SystemExit(
+            f"{proximity_path(cache)} was scored against {scored_against}, and this draw "
+            f"excludes {sorted(task_names)}. Amendment 18(b) defines the arm by one set of "
+            "benchmark molecules; rescore the sidecar with --force, or pass the tasks it holds."
+        )
     stats["benchmark_proximity"] = {
         "quantile": quantile,
         "cutoff": cutoff,
@@ -161,7 +174,7 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     frame = apply_clean(frame, cfg.get("clean"))
     stats["after_cleaning"] = len(frame)
     frame = filter_np_like(frame, cfg, stats)
-    frame = filter_benchmark_proximity(frame, cfg, stats)
+    frame = filter_benchmark_proximity(frame, cfg, stats, task_names)
 
     benchmark: set[str] = set()
     if task_names:

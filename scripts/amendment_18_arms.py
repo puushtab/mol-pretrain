@@ -242,10 +242,20 @@ def load_cells(
             if not whole(mine):
                 raise SystemExit(f"reference {key} is not whole under {record}")
 
+    # Both sets of arms are Amendment 16 throughout. The cells of record are not:
+    # at 500 and all labels they predate the amendment and record no number, so a
+    # blanket check over every cell fires on 380 references and aborts every run.
+    # The rule that matters is Stage D's: the arms are 16, and any 50 or 100 label
+    # cell is 16 wherever it comes from, because that is where the recipe changed.
+    for frame, what in ((new, "Amendment 18"), (old, "Stage D")):
+        if (frame["amendment"] != 16).any():
+            bad = sorted(set(frame[frame["amendment"] != 16]["run"]))
+            raise SystemExit(f"{what} cells not run under the Amendment 16 recipe: {bad[:5]}")
     cells = pd.concat([new, old, references], ignore_index=True)
-    if (cells["amendment"] != 16).any():
-        bad = sorted(set(cells[cells["amendment"] != 16]["run"]))
-        raise SystemExit(f"cells not run under the Amendment 16 recipe: {bad[:5]}")
+    low = cells[cells["labels"].isin(["50", "100"])]
+    if (low["amendment"] != 16).any():
+        bad = sorted(set(low[low["amendment"] != 16]["run"]))
+        raise SystemExit(f"a 50 or 100 label cell from before Amendment 16: {bad[:5]}")
     if (cells["method"] != "finetune").any() or (cells["freeze_epochs"] != 0).any():
         raise SystemExit("a cell that is not a plain fine-tune of the registered recipe")
     same = ["splits_sha256", "test_rows", "test_labels"]

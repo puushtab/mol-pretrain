@@ -919,9 +919,11 @@ What that leaves in is counted rather than assumed. `prepare_corpus.py` records
 for every draw the mean nearest-benchmark similarity, the minimum, and how many
 molecules sit at exactly 1.0, above 0.9 and above 0.7. A score of exactly 1.0 is
 a molecule whose fingerprint equals a benchmark molecule's while its canonical
-SMILES does not; fingerprints ignore stereochemistry, so these are the same
-stereo-ignored matches the Stage D audit found, counted at the point the draw is
-made. The proximity arm will carry more near neighbours than any other arm in
+SMILES does not. Fingerprints ignore stereochemistry, so stereoisomers land
+there, but so does any other pair Morgan at radius 2 cannot separate: it is a
+fingerprint tie and therefore an upper bound on the stereo-ignored matches, not
+a count of them, and not the measurement the Stage D audit made for COCONUT.
+See 18(k). The proximity arm will carry more near neighbours than any other arm in
 the study, by construction. That is the treatment, not a flaw, and the numbers
 go in the write-up beside the result.
 
@@ -1015,3 +1017,71 @@ question for check-in 2 on 19 November and any answer comes by a further
 amendment, for every encoder at once. Stage E, the frozen probe on the Stage D
 encoders, and which sensitivity intervals are printed are not settled here and
 belong to the next amendment, drafted after check-in 2.
+
+**(k) Corrections of 18 November 2026, made before any Amendment 18 score
+existed.** Five independent reads of this amendment and its code, run the night
+it was written, found what follows. All of it is recorded rather than quietly
+edited, and none of it changes what was registered in 18(e): the four intervals,
+their budgets and their family stand as written. No encoder had finished when
+these were made.
+
+1. **The reference set is 2,999 structures, not 3,167.** Corrected in 18(b),
+   where the arithmetic that produced the wrong number is also stated.
+
+2. **"Stereo-ignored match" was the wrong name for the count in 18(c).** The
+   statistic is a fingerprint tie: equal Morgan fingerprints at radius 2 and
+   2,048 bits, unequal canonical SMILES. Stereoisomers are the main cause and
+   not the only one, so it is an upper bound on stereo-ignored matches, and it
+   is not the measurement the Stage D audit used to get COCONUT's 65 to 71. The
+   two are comparable as orders of magnitude and no closer. The counts
+   themselves are unchanged: about 525 per draw in the decile arm against about
+   50 in the control arm.
+
+3. **P1 does not move proximity alone.** The decile nearest the benchmarks is
+   also a narrower slice of chemical space than a uniform tenth, so internal
+   diversity falls with proximity. P1 is the tightest contrast available in this
+   study, and it is still a two-variable one. A P1 that excludes zero does not
+   on its own establish that proximity rather than diversity did it.
+
+4. **P2 is confounded by the descriptor standardisation reference.** Targets are
+   standardised against `pubchem_n100000_s0`, a PubChem draw. That reference is
+   matched to P2's minuend and not to its subtrahend, so a PubChem arm may be
+   favoured on the pretraining objective itself for a reason unrelated to the
+   library carrying more. P2 stays primary as registered; what moves is its
+   interpretation, which is bounded accordingly. P1 is free of this, both of its
+   arms being PubChem draws standardised against the same PubChem reference.
+   18(a) says this amendment removes "both objections" to the unregistered
+   PubChem comparison; it removes two of three, and this is the third.
+
+5. **The registered family may not resolve what it was built for.** 18(e)
+   registers Bonferroni over four. The unadjusted design detects about 0.06 RMSE
+   at 80% power; adjusted over four it is roughly 0.085. The gap these arms
+   exist to explain — every Stage D arm behind the Stage C PubChem encoders — is
+   0.026 to 0.062 RMSE, which sits below that. So a null on all four intervals
+   is the expected outcome even if the effect is real and as large as the one
+   observed, and must be reported as a bound rather than as evidence of no
+   effect. Both the adjusted and unadjusted intervals are printed for this
+   reason. The exact limits are to be computed by a script in the repo before
+   any of these numbers is quoted.
+
+6. **If the two budgets disagree, neither is promoted.** Full labels and 500
+   labels are co-primary and nothing breaks a tie between them. Where one
+   excludes zero and the other does not, the pair is reported as split and the
+   contrast is called unresolved. The budget that excluded zero is not quoted on
+   its own, and neither is nominated after the fact as the one that mattered.
+   Stage D has already produced exactly this pattern for a contrast of this
+   kind.
+
+7. **The intervals count splits, not pretraining draws.** Averaging an arm's
+   three seeds inside a split before differencing hides the draw-to-draw
+   variance, exactly as in Stage D, where a draw-counting interval removes one
+   of the two results that exclude zero. The registered interval is the
+   split-paired one. An interval that also counts the draw is reported beside
+   it, in a column marked not registered.
+
+8. **A seed is a corpus draw and an initialisation at once.** 18(d) says draws
+   are seeded by seed alone, which is true of which molecules a corpus holds and
+   false of the encoder trained on it: model initialisation and batch order are
+   not separately seeded or recorded, so an encoder cannot be regenerated bit
+   for bit and a seed difference is both effects together. This is a standing
+   property of the study, recorded in `docs/remaining-steps.md`, not a new one.
