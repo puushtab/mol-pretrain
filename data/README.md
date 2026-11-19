@@ -1,7 +1,10 @@
 # data/
 
-Nothing here is committed. Point `NC_DATA_DIR` at a bigger disk if `./data` is
-not where the files should live.
+Almost nothing here is committed. The exception is the lipophilicity benchmark
+and its ten frozen splits, 512 KB, because Stage D has to pair against the test
+molecules Stage B used and a regenerated split is not the same split. See
+`data/processed/splits/lipophilicity/README.md`. Point `NC_DATA_DIR` at a
+bigger disk if `./data` is not where the files should live.
 
 ```
 data/
@@ -10,10 +13,11 @@ data/
     zinc/
     coconut/
     tasks/                  one CSV per benchmark
+    candidates/             benchmarks the screen considered. lipophilicity.csv is in git
   processed/                reproducible from raw plus configs
     corpora/                <corpus>_n<size>_s<seed>.csv and its stats JSON
     descriptors/            <corpus>_n<size>_s<seed>.zarr and standardisation vectors
-    splits/                 <task>/seed<k>.json
+    splits/                 <task>/seed<k>.json. lipophilicity/ is in git
 ```
 
 ## Sources
