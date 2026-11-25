@@ -261,3 +261,5 @@ data/raw/candidates/*
 !data/processed/splits/
 data/processed/splits/*
 !data/processed/splits/lipophilicity/
+
+exploratory/
