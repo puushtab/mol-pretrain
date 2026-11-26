@@ -1,0 +1,13 @@
+{
+  "corpus": "coconut",
+  "size": 5000,
+  "seed": 0,
+  "cached": 738767,
+  "after_cleaning": 670351,
+  "benchmark_identity": "connectivity",
+  "benchmark_molecules": 60170,
+  "pool_benchmark_overlap": 129107,
+  "benchmark_overlap_removed": true,
+  "final": 5000,
+  "sample_benchmark_overlap": 0
+}
