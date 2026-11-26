@@ -81,11 +81,22 @@ for t in "${TASKS[@]}"; do
     test -f "$NC_DATA_DIR/processed/splits/$t/seed0.json"
 done
 
-# --clip-features, not the uncapped default. runs/probe/ was distorted on ESOL
-# in every arm by z-scoring near-dead embedding dimensions, and runs/probe_clipped/
-# is the corrected version. A new probe has no reason to reproduce the fault.
+# Two corrections, both of faults the old probe is documented to have, because a
+# new campaign has no reason to reproduce them.
+#
+# --clip-features: runs/probe/ was distorted on ESOL in every arm by z-scoring
+# near-dead embedding dimensions. runs/probe_clipped/ is the corrected version.
+#
+# --budget-validation: D2 in docs/probe-results.md, the first fix that file asks
+# for. Without it a cell selects its regulariser on the WHOLE validation split
+# whatever its label budget, which here is 6,017 molecules, so a cell labelled
+# 100 would consume 6,117 and this campaign — which is entirely low-budget, and
+# whose whole point is the low-label regime — would contain no low-label
+# measurement at all. With it the rule is `label_budget`, the one finetune.py has
+# always used, so a probe cell and a fine-tuning cell at one budget have seen the
+# same number of labels: 100 labels means 100 train and 12 validation.
 echo "== $(date '+%H:%M:%S') probing"
-"$PY" scripts/probe.py "${ARGS[@]}" --out "$OUT" --clip-features
+"$PY" scripts/probe.py "${ARGS[@]}" --out "$OUT" --clip-features --budget-validation
 
 echo "== $(date '+%H:%M:%S') scoring"
 "$PY" scripts/evaluate.py "$OUT"

@@ -36,6 +36,7 @@ import pandas as pd
 
 from natural_compounds.config import load_config
 from natural_compounds.paths import CONFIGS, DATA_PROCESSED, ROOT, RUNS, resolve_source
+from natural_compounds.splits import label_budget
 
 warnings.filterwarnings("ignore")
 
@@ -290,7 +291,13 @@ def fit_and_score(
 
 
 def label_subset(indices: list[int], count: int | None, seed: int) -> np.ndarray:
-    """The labelled molecules this cell may train on, drawn with the split seed."""
+    """The labelled molecules this cell may train on, drawn with the split seed.
+
+    Kept as it was so `runs/probe/` and `runs/probe_clipped/` stay reproducible.
+    `--budget-validation` uses `label_budget` instead, which is what
+    `finetune.py` has always used; see the flag's help and D2 in
+    docs/probe-results.md.
+    """
     order = np.asarray(indices)
     if count is None or count >= len(order):
         return order
@@ -335,6 +342,25 @@ def arms(only: list[str] | None) -> list[tuple[str, str, int | None, int | None]
     if only:
         found = [a for a in found if a[0] in only]
     return found
+
+
+# The two finished probe campaigns. A flag that changes what a cell means must
+# not write into either, so both are refused by name.
+#
+# By name, because on this cluster no path comparison does it. `$HOME` is
+# reachable as both `/home/gdupuis` and `/orcd/home/002/gdupuis`; `.venv`
+# resolves the repo through the first and `.venv-train` through the second, so
+# `RUNS` differs between the two environments that run this script. `resolve()`
+# does not unify them, and neither does `samefile()`: the same directory reports
+# st_ino 9292341510835238414 under both and st_dev 55 through one mount and 92
+# through the other. The `--clip-features` guard has compared `==` against the
+# default since it was written, so `--out runs/probe` walked straight past it
+# and would have written capped cells into the uncapped campaign.
+#
+# The cost of matching on the name is that a directory called `probe` anywhere
+# else is refused too. The message says which names are taken, and no campaign
+# wants one of them.
+PROTECTED_RUNS = ("probe", "probe_clipped")
 
 
 def molecule_key(smiles: list[str]) -> str:
@@ -393,6 +419,17 @@ def main() -> None:
         help="cap standardised features at sqrt(n_train - 1); off reproduces runs/probe/",
     )
     parser.add_argument(
+        "--budget-validation",
+        action="store_true",
+        help="shrink the validation split with the label budget, the way finetune.py "
+        "always has, instead of selecting the regulariser on the whole of it. This is "
+        "D2 in docs/probe-results.md, the first fix that file asks for: without it a "
+        "cell labelled 100 selects its regulariser on every validation molecule there "
+        "is, which on a 60,170-molecule task is 6,017 of them, so the cell consumes "
+        "6,117 labels and is not a low-label measurement at all. Off by default, so "
+        "runs/probe/ and runs/probe_clipped/ stay reproducible; needs its own --out.",
+    )
+    parser.add_argument(
         "--split-seed",
         type=int,
         action="append",
@@ -409,8 +446,17 @@ def main() -> None:
         "label. Repeatable.",
     )
     args = parser.parse_args()
-    if args.clip_features and args.out == RUNS / "probe":
-        raise SystemExit("--clip-features needs its own --out, so it cannot mix with runs/probe/")
+    if args.clip_features and args.out.name == "probe":
+        raise SystemExit(
+            "--clip-features caps features that runs/probe/ left uncapped, so it needs "
+            "its own --out. The name `probe` is taken."
+        )
+    if args.budget_validation and args.out.name in PROTECTED_RUNS:
+        raise SystemExit(
+            "--budget-validation draws a different validation set from the one "
+            f"{'/, '.join(PROTECTED_RUNS)}/ were measured with, so it needs its own "
+            f"--out. The names {' and '.join(PROTECTED_RUNS)} are taken."
+        )
 
     tasks = args.task or ["bbbp", "esol"]
     selected = arms(args.arm)
@@ -426,6 +472,12 @@ def main() -> None:
         splits_dir = DATA_PROCESSED / "splits" / task
         if not splits_dir.exists():
             raise SystemExit(f"no splits for {task}; run scripts/make_splits.py")
+        # make_splits.py already leaves unparseable rows out of every subset, so
+        # this changes nothing for the tasks we have. It is here because
+        # label_budget is handed index lists and finetune.py filters them the
+        # same way, and two paths that are meant to draw identically should not
+        # differ in what they are given.
+        readable = parseable(smiles)
 
         for name, kind, size, pretrain_seed in selected:
             features = representation(name, kind, smiles, task)
@@ -440,7 +492,20 @@ def main() -> None:
             for split_seed in seeds:
                 split = json.loads((splits_dir / f"seed{split_seed}.json").read_text())
                 for count in counts:
-                    train = label_subset(split["train"], count, split_seed)
+                    if args.budget_validation:
+                        # The same rule, the same seed and the same nesting as
+                        # finetune.py, so a probe cell and a fine-tuning cell at
+                        # one budget have seen the same number of labels.
+                        train, budget_val = label_budget(
+                            [i for i in split["train"] if readable[i]],
+                            [i for i in split["val"] if readable[i]],
+                            count,
+                            split_seed,
+                            classes=target if cfg["task_type"] == "classification" else None,
+                        )
+                    else:
+                        train = label_subset(split["train"], count, split_seed)
+                        budget_val = None
                     test = np.asarray(split["test"])
                     train_y = target[train]
                     if cfg["task_type"] == "classification" and len(set(train_y)) < 2:
@@ -460,7 +525,7 @@ def main() -> None:
                     if (run / "predictions.csv").exists():
                         continue
 
-                    val = np.asarray(split["val"])
+                    val = np.asarray(split["val"]) if budget_val is None else budget_val
                     y_true, y_pred, chosen = fit_and_score(
                         features[train],
                         train_y,
@@ -488,7 +553,13 @@ def main() -> None:
                                 "arm": name,
                                 "method": "linear_probe",
                                 "n_train": int(len(train)),
+                                # Recorded because D2 could not be checked from
+                                # a manifest that never wrote it down. A reader
+                                # can now add n_train and n_val and see what a
+                                # cell actually consumed.
+                                "n_val": int(len(val)),
                                 "n_test": int(len(test)),
+                                "budget_validation": bool(args.budget_validation),
                                 "regularisation": chosen,
                                 "feature_clip": (
                                     clip_bound(len(train)) if args.clip_features else None
