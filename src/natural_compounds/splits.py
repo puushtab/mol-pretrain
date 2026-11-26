@@ -185,6 +185,25 @@ def splits_fingerprint(directory: Path) -> str | None:
     return running.hexdigest()[:16]
 
 
+def split_file_digest(directory: Path, seed: int) -> str | None:
+    """A digest over the one split file a cell actually read.
+
+    `splits_fingerprint` hashes every `seed*.json` in the directory, which is
+    the right check when the campaign is closed and the wrong one the moment it
+    is extended. Adding a sixth seed changes the directory digest for all five
+    that came before, and evaluate.py then refuses to pool a finished cell with
+    a new one although neither was scored on a molecule the other did not see.
+
+    This is the per-cell version. Two cells carrying the same value were scored
+    on the same test rows, whatever else has since landed in the directory.
+    Both digests are recorded, so nothing that relied on the old one breaks.
+    """
+    path = directory / f"seed{seed}.json"
+    if not path.exists():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
 def splits_provenance(directory: Path, source_digest: str, sizes: dict) -> dict:
     """What produced these splits, written beside them."""
     from natural_compounds.manifest import build_manifest_fields

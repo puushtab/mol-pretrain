@@ -249,3 +249,17 @@ papers/*.pdf
 papers/*.html
 papers/*.txt
 .venv-train/
+
+# Lipophilicity is the exception to the line above, and it is deliberate.
+# The benchmark CSV and its ten frozen splits are 0.5 MB together, and Stage D
+# cannot be paired against Stage B without the exact files. make_splits.py
+# regenerates a different seed 0 under a different RDKit, so these travel in
+# git rather than being rebuilt. See data/processed/splits/lipophilicity/README.md.
+!data/raw/candidates/
+data/raw/candidates/*
+!data/raw/candidates/lipophilicity.csv
+!data/processed/splits/
+data/processed/splits/*
+!data/processed/splits/lipophilicity/
+
+exploratory/

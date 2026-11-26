@@ -293,7 +293,20 @@ def effective_clusters(groups: np.ndarray) -> float:
     return float(sizes.sum() ** 2 / (sizes**2).sum())
 
 
-def wild_cluster_p(y, design, clusters, index: int, seed: int = 0) -> float:
+# Webb's six-point weights. Mean 0, variance 1, third moment 0, fourth moment
+# 7/6 against the Rademacher's 1. Webb (2014, Queen's Economics 1315, published
+# in CJE 56(3)) shows no six-point distribution of this shape can match all
+# four moments, and settles for the fourth being near one. What it buys is the
+# support: 6**G draws rather than 2**G, which is 7,776 at five clusters
+# against 32. Roodman, MacKinnon, Nielsen and Webb (Stata Journal 19(1))
+# recommend it whenever G is below ten or twelve.
+WEBB = (-(1.5**0.5), -1.0, -(0.5**0.5), 0.5**0.5, 1.0, 1.5**0.5)
+MAX_WEBB_PATTERNS = 10_000
+
+
+def wild_cluster_p(
+    y, design, clusters, index: int, seed: int = 0, weights: str = "rademacher"
+) -> float:
     """A p-value for one coefficient, resampling signs on whole splits.
 
     Five splits is far too few for a normal approximation on a cluster-robust
@@ -314,6 +327,15 @@ def wild_cluster_p(y, design, clusters, index: int, seed: int = 0) -> float:
     such. A t test on the five per-split slopes has four degrees of freedom and
     no floor at all, which is why `split_level_t` runs beside this one. Read
     `p_floor` before reading `p_wild_split`.
+
+    `weights="webb"` is the published answer to the floor. Webb's six-point
+    distribution has the same first three moments and a support of six rather
+    than two, so the reference distribution has 6**G points. At five splits
+    that is 7,776 against 32 and the floor falls from 0.0625 to 0.00013. It is
+    not free: the fourth moment is 7/6 rather than 1, which Webb shows is
+    unavoidable for a six-point distribution of this shape. Both are reported,
+    since a result that holds under one and not the other is a result about the
+    weights.
 
     The tolerance below is relative. An absolute one lets a large observed
     statistic drift past itself on rounding and the test then returns a p below
@@ -341,6 +363,21 @@ def wild_cluster_p(y, design, clusters, index: int, seed: int = 0) -> float:
         return abs(b[index] / s[index]) if s[index] > 0 else np.inf
 
     tolerance = abs(observed) * 1e-9 + 1e-12
+
+    if weights == "webb":
+        if 6**count <= MAX_WEBB_PATTERNS:
+            # Enumerated, so the all-ones pattern counts itself and no seed
+            # enters the answer. It is in the support, since one of the six
+            # points is exactly 1.
+            extreme = sum(
+                statistic(pattern) >= observed - tolerance
+                for pattern in itertools.product(WEBB, repeat=count)
+            )
+            return extreme / 6**count
+        rng = np.random.default_rng(seed)
+        draws = rng.choice(WEBB, size=(9999, count))
+        extreme = sum(statistic(row) >= observed - tolerance for row in draws)
+        return (1 + extreme) / (1 + len(draws))
 
     if count <= MAX_ENUMERATED:
         # Half the patterns, doubled. Flipping every sign at once negates the
@@ -476,6 +513,12 @@ def fit(
         "high": float(beta[1] + 1.96 * se[1]),
         "p_wild_split": round(wild_cluster_p(usable["gain"].to_numpy(float), design, splits, 1), 4),
         "p_floor": round(2 / 2 ** len(np.unique(splits)), 4),
+        # The same test under Webb's six-point weights, whose support is 6**G
+        # rather than 2**G. A row where p_wild_split sits exactly on its floor
+        # and p_wild_webb does not is a row the Rademacher could not resolve.
+        "p_wild_webb": round(
+            wild_cluster_p(usable["gain"].to_numpy(float), design, splits, 1, weights="webb"), 5
+        ),
         **split_level_t(usable, column, classification, adjust_label),
         "x_sd": float(usable[column].std()),
     }
@@ -535,6 +578,7 @@ def contrast(frame: pd.DataFrame, away: pd.Series, name: str, classification: bo
                 "n_split_slopes": got.get("n_split_slopes"),
                 "p_wild_split": got.get("p_wild_split"),
                 "p_floor": got.get("p_floor"),
+                "p_wild_webb": got.get("p_wild_webb"),
                 "effective_clusters": got.get("effective_clusters"),
             }
         )
@@ -667,6 +711,7 @@ def main() -> None:
             "high",
             "p_im",
             "p_wild_split",
+            "p_wild_webb",
         )
         if c in slopes.columns
     ]

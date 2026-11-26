@@ -86,3 +86,57 @@ def test_the_baseline_is_not_paired_with_itself():
 def test_a_missing_baseline_gives_nothing_rather_than_a_wrong_pairing():
     frame = runs("released", [0.85] * 5)
     assert evaluate.paired(frame, "scratch").empty
+
+
+def frame_with_training_seeds(n_splits=5, n_seeds=3):
+    rng = np.random.default_rng(0)
+    rows = []
+    for split in range(n_splits):
+        base = 0.9 + rng.normal(0, 0.03)
+        for seed in range(n_seeds):
+            rows.append(
+                {
+                    "task": "bbbp",
+                    "corpus": "released",
+                    "size": None,
+                    "label_count": None,
+                    "metric": "auroc",
+                    "arm": "released",
+                    "seed": split,
+                    "train_seed": seed,
+                    "pretrain_seed": None,
+                    "value": base + rng.normal(0, 0.01),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_training_seeds_are_not_counted_as_independent_observations():
+    """Five splits run three times each is five numbers, not fifteen.
+
+    The interval divides the standard deviation by the square root of `count`.
+    Letting the repeats through would narrow every interval in the campaign by
+    a factor of about 1.73, for replicates that share a split and share its
+    molecules. Both `summarise` and `paired` have to collapse them.
+    """
+    frame = frame_with_training_seeds(n_splits=5, n_seeds=3)
+
+    row = evaluate.summarise(frame).iloc[0]
+    assert int(row["count"]) == 5
+    assert int(row["n_splits"]) == 5
+    assert int(row["n_train_seeds"]) == 3
+
+    baseline = frame.assign(arm="scratch", value=frame["value"] - 0.02)
+    paired = evaluate.paired(pd.concat([frame, baseline]), "scratch").iloc[0]
+    assert int(paired["count"]) == 5
+    assert int(paired["n_train_seeds"]) == 3
+
+
+def test_the_spread_between_repeats_is_reported_separately():
+    """It answers a different question: how much of a cell is training luck."""
+    frame = frame_with_training_seeds()
+    row = evaluate.summarise(frame).iloc[0]
+    assert row["train_sd"] > 0
+    # One seed a split leaves nothing to spread.
+    alone = evaluate.summarise(frame[frame.train_seed == 0]).iloc[0]
+    assert np.isnan(alone["train_sd"])

@@ -117,7 +117,7 @@ def test_the_gradient_reaches_the_encoder():
 @pytest.mark.parametrize("task_type", ["classification", "regression"])
 def test_a_cell_scores_every_test_molecule(task_type):
     target = LABELS if task_type == "classification" else LABELS * 2.5 - 1.0
-    predictions, logits, where = finetune.fit_cell(
+    predictions, val_predictions, logits, curve, where = finetune.fit_cell(
         {"task_type": task_type},
         "chemprop",
         SMILES,
@@ -126,13 +126,23 @@ def test_a_cell_scores_every_test_molecule(task_type):
         VAL,
         TEST,
         split_seed=0,
+        train_seed=0,
         max_epochs=2,
         accelerator="cpu",
     )
     assert len(predictions) == len(TEST)
     assert np.isfinite(predictions).all()
+    # Validation is scored by the same best checkpoint. Model selection runs on
+    # twelve molecules at a hundred labels and this is the only way to ask
+    # afterwards how well it chose.
+    assert len(val_predictions) == len(VAL)
+    assert np.isfinite(val_predictions).all()
+    # One row an epoch, with the quantity early stopping watched on it.
+    assert len(curve) >= 1
+    assert all("val_loss" in row for row in curve)
     assert where["kind"] == "chemprop"
     assert where["epochs_run"] >= 1
+    assert where["wall_seconds"] >= 0
     assert where["target_scaled"] is (task_type == "regression")
     if task_type == "classification":
         # y_pred stays a probability. The logit it came from rides beside it,
@@ -147,7 +157,7 @@ def test_a_cell_scores_every_test_molecule(task_type):
 @needs_train
 def test_an_epoch_below_the_floor_is_eight_passes():
     """Six molecules are one batch, so the recipe's two epochs are sixteen passes."""
-    _, _, where = finetune.fit_cell(
+    *_, where = finetune.fit_cell(
         {"task_type": "classification"},
         "chemprop",
         SMILES,
@@ -156,6 +166,7 @@ def test_an_epoch_below_the_floor_is_eight_passes():
         VAL,
         TEST,
         split_seed=0,
+        train_seed=0,
         max_epochs=2,
         accelerator="cpu",
     )
@@ -192,7 +203,7 @@ def test_warmup_takes_two_recipe_epochs_in_a_real_cell(monkeypatch):
         return real(*args, **kwargs)
 
     monkeypatch.setattr(pl, "Trainer", watched)
-    _, _, where = finetune.fit_cell(
+    *_, where = finetune.fit_cell(
         {"task_type": "regression"},
         "chemprop",
         SMILES,
@@ -201,6 +212,7 @@ def test_warmup_takes_two_recipe_epochs_in_a_real_cell(monkeypatch):
         VAL,
         TEST,
         split_seed=0,
+        train_seed=0,
         max_epochs=3,
         accelerator="cpu",
     )
@@ -457,3 +469,117 @@ def test_a_validation_split_of_one_class_comes_back_as_it_was():
     plain = finetune.label_budget(train, val, 50, 1)
     aware = finetune.label_budget(train, val, 50, 1, classes=np.ones(240))
     assert np.array_equal(plain[1], aware[1])
+
+
+def test_a_finished_cell_is_refused_when_it_is_a_different_cell(tmp_path):
+    """`if predictions.csv exists: skip` is right after a preemption and wrong
+    after anything changed underneath.
+
+    A split file regenerated with a different RDKit, a budget rule that moved,
+    a cap raised: each leaves the old directory in place, and the sweep then
+    reports one complete campaign made out of two different experiments.
+    """
+    import json as _json
+
+    run = tmp_path / "released__bbbp__split0__n50"
+    run.mkdir()
+    on_disk = {
+        "arm": "released",
+        "task": "bbbp",
+        "label_count": 50,
+        "seed": 0,
+        "train_seed": 0,
+        "split_file_sha256": "aaaa",
+        "n_train": 50,
+        "n_val": 6,
+        "n_test": 205,
+        "max_epochs": 200,
+        "freeze_epochs": None,
+    }
+    (run / "manifest.json").write_text(_json.dumps(on_disk))
+
+    assert finetune.identity_mismatch(run, on_disk) == []
+
+    moved = dict(on_disk, split_file_sha256="bbbb")
+    assert any("split_file_sha256" in line for line in finetune.identity_mismatch(run, moved))
+
+    raised = dict(on_disk, max_epochs=50)
+    assert any("max_epochs" in line for line in finetune.identity_mismatch(run, raised))
+
+    # A field the caller does not know yet is not a mismatch.
+    assert finetune.identity_mismatch(run, {"arm": "released"}) == []
+
+
+def test_a_cell_with_no_manifest_is_not_treated_as_finished(tmp_path):
+    run = tmp_path / "released__bbbp__split0__n50"
+    run.mkdir()
+    assert finetune.identity_mismatch(run, {"arm": "released"}) == [
+        "no manifest.json beside the predictions"
+    ]
+
+
+@needs_train
+def test_the_training_seed_moves_the_weights_and_the_split_seed_does_not():
+    """Two seeds, two jobs. Until now one number did both, so a result that
+    moved between splits could not be told apart from one that moved between
+    two runs on the same split.
+    """
+    import torch
+
+    a, _ = encoders.untrained(0, d_h=16, depth=2)
+    b, _ = encoders.untrained(0, d_h=16, depth=2)
+    c, _ = encoders.untrained(1, d_h=16, depth=2)
+    assert torch.equal(a.W_h.weight, b.W_h.weight)
+    assert not torch.equal(a.W_h.weight, c.W_h.weight)
+
+
+def test_a_cell_from_the_previous_recipe_is_refused(tmp_path):
+    """A manifest with no protocol_amendment ran under amendment nought.
+
+    Every cell of runs/stage_b3 is one. Resuming that directory under the
+    current code would have reported them done already and trained whatever
+    was missing under Amendment 16, so the directory would hold two
+    protocols and say nothing about it.
+    """
+    import json as _json
+
+    (tmp_path / "predictions.csv").write_text("row_index,y_true,y_pred\n")
+    (tmp_path / "manifest.json").write_text(_json.dumps({"arm": "released", "n_train": 50}))
+
+    differs = finetune.identity_mismatch(
+        tmp_path, {"arm": "released", "n_train": 50, "protocol_amendment": 16}
+    )
+    assert differs == ["protocol_amendment: on disk 0, this run 16"]
+    assert "absent from the manifest" not in differs[0]
+
+
+def test_a_digest_that_disagrees_is_not_filed_under_legacy(tmp_path):
+    """Present and different is the case the check exists for.
+
+    The resume filter used to drop every line whose field was named
+    train_seed or split_file, on the argument that old manifests lack them.
+    A split file regenerated under another RDKit lands in the same two
+    fields, and was waved through.
+    """
+    import json as _json
+
+    (tmp_path / "manifest.json").write_text(
+        _json.dumps({"split_file_sha256": "70ad97cca6da4158", "train_seed": 0})
+    )
+
+    differs = finetune.identity_mismatch(
+        tmp_path, {"split_file_sha256": "0000000000000000", "train_seed": 0}
+    )
+    assert differs == ["split_file_sha256: on disk '70ad97cca6da4158', this run '0000000000000000'"]
+    assert not [d for d in differs if "absent from the manifest" in d]
+
+
+def test_a_field_an_old_manifest_never_carried_is_only_a_note(tmp_path):
+    """Absent is not disagreement, and must not refuse a legitimate resume."""
+    import json as _json
+
+    (tmp_path / "manifest.json").write_text(_json.dumps({"arm": "released"}))
+
+    differs = finetune.identity_mismatch(tmp_path, {"arm": "released", "train_seed": 2})
+    assert differs == ["train_seed: absent from the manifest, this run 2"]
+    assert all("absent from the manifest" in d for d in differs)

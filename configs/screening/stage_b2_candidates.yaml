@@ -1,0 +1,113 @@
+# Candidates for a third Stage B benchmark, screened before any is trained on.
+#
+# The two incumbents are listed so the table has a scale. Everything a
+# candidate is judged on is also computed for BBBP and ESOL, and "better than
+# what we have" is read off the same column rather than asserted.
+#
+# The target column is one scalar or one binary label. Nothing here needs
+# bespoke parsing, which is a selection criterion and not an accident: a
+# benchmark that needs new featurisation machinery is a different project.
+#
+# The shortlist follows from the corpus finding rather than from intuition.
+# The released pool is the head of PubChem in CID order, CIDs 1 to 1,111,175,
+# which are the 2004 and 2005 deposits: NCI and DTP screening stock, KEGG,
+# common drugs, commodity organics. BBBP is drugs. ESOL is commodity organics.
+# They sit at 73 and 93 percent inside the pool by construction.
+#
+# So the operative question is not which chemistry looks exotic. It is which
+# molecules entered PubChem late. That cuts against the obvious guesses:
+# industrial and environmental sets feel distant from drug-likeness and are
+# exactly the commodity chemicals EPA deposited early. Modern medicinal
+# chemistry mirrored from ChEMBL after 2015 carries CIDs in the tens of
+# millions, and that is the stratum a prefix misses.
+#
+# Screening is what settles it. The reasoning above picks who gets measured.
+#
+# These files are fetched by
+#   uv run python scripts/download_data.py --only candidates
+# which prints a digest to pin, because nobody here has held them yet.
+
+pool: data/raw/pubchem/cleaned_pubchem_1MM.smiles
+seeds: [0, 1, 2, 3, 4]
+
+candidates:
+  - name: bbbp
+    source: data/raw/tasks/bbbp.csv
+    smiles_column: smiles
+    target_column: p_np
+    task_type: classification
+    incumbent: true
+
+  - name: esol
+    source: data/raw/tasks/esol.csv
+    smiles_column: smiles
+    target_column: measured log solubility in mols per litre
+    task_type: regression
+    incumbent: true
+
+  # Octanol/water distribution at pH 7.4. 4,200 molecules, three times either
+  # incumbent, so the size term of the MDE is where it would win. The
+  # provenance is the reason it leads: these are disclosed AstraZeneca
+  # medicinal-chemistry compounds deposited to ChEMBL in 2015 and 2016, so
+  # they reach PubChem through the ChEMBL mirror with late CIDs. It is a
+  # physicochemical property like ESOL, which is the argument against it.
+  - name: lipophilicity
+    source: data/raw/candidates/lipophilicity.csv
+    smiles_column: smiles
+    target_column: exp
+    task_type: regression
+
+  # Dopamine D2 receptor Ki, from MoleculeACE. 3,657 molecules, the largest of
+  # its thirty ChEMBL v29 sets. Modern potency data from papers, which is the
+  # late-CID stratum, and it is a target-specific biological endpoint rather
+  # than another physicochemical one.
+  #
+  # It is also where this checkpoint is known to win. CheMeleon's own paper
+  # benchmarks on MoleculeACE and reports a 97 percent win rate there against
+  # plain chemprop's zero. Measuring the similarity question where the effect
+  # demonstrably exists is better than measuring it where it may not.
+  #
+  # The target column is the pKi, not the raw `y`. The two differ by a nine
+  # unit offset.
+  - name: moleculeace_drd2
+    source: data/raw/candidates/moleculeace_chembl234_ki.csv
+    smiles_column: smiles
+    target_column: "y [pEC50/pKi]"
+    task_type: regression
+
+  # Beta-secretase 1 inhibition. A target-specific endpoint, which neither
+  # incumbent is, and CheMeleon's paper puts descriptor augmentation at about
+  # 0.09 AUROC here at sixty molecules, roughly what pretraining itself is
+  # worth. Against it: 1,513 molecules is barely over the size gate, the IC50
+  # values come from 55 papers at mixed protocols, and 71 percent of the
+  # molecules carry at least one undefined stereocentre with one stereoisomer
+  # pair differing a thousandfold in potency. Screened rather than assumed.
+  - name: bace
+    source: data/raw/candidates/bace.csv
+    smiles_column: mol
+    target_column: Class
+    task_type: classification
+
+  # Hydration free energy, calculated and experimental. 642 molecules, which
+  # is below the size gate on purpose. It is here so the table shows what a
+  # benchmark that is distant and too small looks like, since that is the
+  # shape of candidate the gates exist to refuse.
+  - name: freesolv
+    source: data/raw/candidates/freesolv.csv
+    smiles_column: smiles
+    target_column: expt
+    task_type: regression
+
+  # HIV replication inhibition. 41,127 molecules and about 3.5 percent active,
+  # so it fails the minority gate and would take the campaign from hours to
+  # days. Also here to be refused, by a different gate.
+  #
+  # Worth knowing even so: these are the NCI DTP compounds, which are among the
+  # very earliest PubChem deposits. It is the one candidate expected to be
+  # *more* saturated than the incumbents, so its row in the screen is a
+  # prediction the measurement can check.
+  - name: hiv
+    source: data/raw/candidates/hiv.csv
+    smiles_column: smiles
+    target_column: HIV_active
+    task_type: classification
