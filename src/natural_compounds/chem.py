@@ -29,6 +29,29 @@ def canonicalize(smiles: str) -> str | None:
     return None if mol is None else Chem.MolToSmiles(mol)
 
 
+def connectivity_key(smiles: str) -> str | None:
+    """The canonical SMILES with stereochemistry removed from both sides.
+
+    Amendment 19. `canonicalize` keeps stereochemistry, which is right whenever
+    a benchmark and a corpus describe their molecules the same way. The
+    biological-origin benchmark carries none at all while COCONUT is about 83
+    percent stereospecified, so an exact canonical match compares a flat
+    structure against a stereospecified one and misses nearly everything: the
+    canonical key reaches 15.4 percent of that benchmark's structures in the
+    COCONUT pool and this one reaches 99.0.
+
+    It is not the better key in general, only the comparable one here. It merges
+    genuine stereoisomers, so it overstates identity wherever two sources both
+    carry stereochemistry. Which key a draw used is recorded in its stats, and a
+    draw excluded on this one is written under its own corpus name.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    Chem.RemoveStereochemistry(mol)
+    return Chem.MolToSmiles(mol)
+
+
 def is_valid(smiles: str) -> bool:
     return Chem.MolFromSmiles(smiles) is not None
 

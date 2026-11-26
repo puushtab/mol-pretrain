@@ -64,6 +64,21 @@ def proximity_manifest_path(corpus: str) -> Path:
     return cache_dir() / f"{corpus}.benchmark_proximity.manifest.json"
 
 
+def connectivity_path(corpus: str) -> Path:
+    """Where the stereochemistry-free key of a cache lives.
+
+    A sidecar for the same reason the proximity score is one: the pubchem cache
+    has produced every Stage C encoder and the coconut cache every Stage D
+    COCONUT arm, so adding a column would rewrite a file that finished
+    pretrainings were drawn from. Keyed on `source_row` like everything else.
+    """
+    return cache_dir() / f"{corpus}.connectivity.parquet"
+
+
+def connectivity_manifest_path(corpus: str) -> Path:
+    return cache_dir() / f"{corpus}.connectivity.manifest.json"
+
+
 def _canonicalise_chunk(args: tuple[list[str], int]) -> list[tuple[str, int, int, int]]:
     raw, offset = args
     out = []

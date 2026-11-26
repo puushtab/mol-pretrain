@@ -1,0 +1,34 @@
+# Biological origin, bacterial against the rest. 60,170 natural products.
+# 10,750 positives, positive rate 0.179.
+#
+# One of the three one-versus-rest tasks of Amendment 19. Origin is a
+# three-class question and chemprop's `build_model` imports only
+# BinaryClassificationFFN and RegressionFFN, so there is no multiclass path.
+# Three binary tasks reuse every code path unchanged and give three paired
+# comparisons instead of one. A multiclass head is a later refinement, not a
+# prerequisite.
+#
+# The labels are the organism a compound was *isolated from*, resolved by the
+# priority human > animal > bacteria > fungi > plant > marine. A 0 therefore
+# means "not the winning origin under that rule", not "not reported from this
+# kingdom", and the rate at which the rule fired is not recoverable from what
+# Capecchi and Reymond published. This is the task's own noise floor. See
+# docs/np-origin-transfer.md section 5.
+#
+# No stereochemistry anywhere in the file, which is why every corpus arm for
+# this task is excluded on the connectivity key. Amendment 19(d).
+name: np_origin_bacterial
+source: data/processed/np_tasks/np_origin.csv
+smiles_column: smiles
+target_columns: [is_bacterial]
+task_type: classification
+metric: auroc
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+# Not 50: a Morgan forest sits at 0.372 balanced accuracy there against a
+# three-class chance of 0.333, so the budget cannot resolve anything. Not all
+# 48,136: saturated, and a cell larger than anything Stage B ran. The screening
+# curve in docs/np-task-selection.md section 3 puts the signal here.
+label_counts: [100, 500, 1000, 5000]

@@ -1113,3 +1113,105 @@ these were made.
    not separately seeded or recorded, so an encoder cannot be regenerated bit
    for bit and a seed difference is both effects together. This is a standing
    property of the study, recorded in `docs/remaining-steps.md`, not a new one.
+
+### 19. A natural-product benchmark, and a size curve on a natural-product corpus. 26 November 2026
+
+Stages A to D asked whether corpus composition matters on BBBP, ESOL and
+lipophilicity. None of those is a natural-product question, and Stage D found no
+separation between three corpora on the general ones. Regina's recommendation,
+and the reason this amendment exists, is that a natural-product corpus should be
+tested where it could plausibly help: on a task that has no meaning for a
+synthetic compound.
+
+Registered before any corpus was drawn, any split frozen or any model run, so
+git proves the ordering, as Amendment 18 did. Léonard has signed nothing here;
+this is Gabriel's decision and is marked as one.
+
+**(a) The benchmark.** Biological origin, from the Capecchi and Reymond release
+of COCONUT, prepared by `scripts/prepare_np_origin.py` and documented in
+`docs/np-origin-transfer.md`. 60,170 structures, labelled plant, fungal or
+bacterial. Fetched and digest-verified on 26 November against the recorded
+sha256.
+
+The MIBiG biosynthetic-class candidate of `docs/np-mibig-candidate.md` is **not**
+adopted here. It is 3,118 structures with two classes under 200, its class
+belongs to the gene cluster rather than the molecule, and its partitioning is
+unsettled. Nothing in this amendment forecloses it.
+
+**(b) Three one-versus-rest binary tasks, not one three-class task.**
+`configs/tasks/np_origin_{plant,fungal,bacterial}.yaml`. `build_model` imports
+`BinaryClassificationFFN` and `RegressionFFN` and nothing else, so a multiclass
+head would touch the head, the `expit` in the prediction path, the one-class
+validation repair in `label_budget` and the metric in `evaluate.py`. Three
+binary tasks reuse every path unchanged and each is shaped exactly like BBBP.
+Scored by AUROC, as BBBP is.
+
+What this costs: the three tasks share their molecules and their splits, so
+their errors are correlated and the three are not three independent tests. They
+are reported as three readings of one benchmark.
+
+**(c) Budgets 100, 500, 1,000 and 5,000. Splits scaffold, ten seeds, frozen.**
+Not 50, where a Morgan forest sits at 0.372 balanced accuracy against a
+three-class chance of 0.333 and the budget resolves nothing. Not all 48,136,
+which is saturated and a larger cell than anything Stage B ran. The screening
+curve this comes from is one baseline on one split and is quoted as screening,
+not as a result.
+
+**(d) Exclusion is on the connectivity key, and the arm is named for it.** The
+origin labels were cut from COCONUT, so the benchmark is made of COCONUT
+structures. The benchmark carries no stereochemistry at all and COCONUT is about
+83 percent stereospecified, so an exact canonical match compares a flat
+structure against a stereospecified one: the canonical key reaches 15.4 percent
+of the benchmark's structures in the COCONUT pool and the connectivity key
+reaches 99.0.
+
+`prepare_corpus.py --identity connectivity` strips stereochemistry from both
+sides and writes the draw as `<corpus>_noleakskel_nSIZE_sSEED`. The default
+stays `canonical`, so every Stage C and Stage D corpus remains reproducible byte
+for byte and nothing already measured moves. A draw records which key it used,
+and after an exclusion the draw is re-checked under the same key and the run
+fails if a benchmark molecule survived.
+
+**The cost is a fifth of the corpus and must be stated in the write-up.**
+Removing the benchmark on connectivity takes roughly 19.7 percent of the COCONUT
+pool. Whether a COCONUT arm pretrained on the remaining four fifths is still "a
+COCONUT corpus" in the sense the hypothesis means is a real objection and is not
+settled by this amendment. It is registered as a known limitation of the design,
+not as something the design avoids. The one thing worse would be leaving the
+benchmark in and reporting recall as transfer.
+
+**(e) The PubChem size curve reuses the fourteen existing encoders, whose
+exposure to this benchmark was never excluded.** `pubchem_n{500..100000}_s{0,1}`
+were drawn for Stage C against BBBP and ESOL and know nothing of this task.
+PubChem's connectivity overlap with the origin benchmark is 17.2 percent of the
+benchmark in the whole pool and about 1.5 percent of any draw.
+
+Reusing them is a deliberate trade: it buys a fourteen-point size curve tonight
+that would otherwise cost fourteen pretrainings, at the price of an arm whose
+exposure is small, measured and unexcluded. Stage C task 14 found no effect of
+exposure on BBBP or ESOL where it was far larger. **The curve is therefore
+reported as a first pass and the exposure is printed beside it.** A
+connectivity-excluded PubChem size curve is the follow-up, and no claim that
+needs exclusion on both sides may rest on this one.
+
+**(f) What is primary and what is exploratory.** The linear probe is **not** the
+protocol's fine-tuning path and nothing it produces is a registered result. It
+exists because it reads checkpoints that already exist and can say within a
+night whether the size curve has any slope at all. Probe results go to
+`runs/probe_np/` and are reported as exploratory, as `runs/probe/` was.
+
+The registered comparison is on the fine-tuning path: COCONUT against PubChem at
+a matched size, paired on split, on each of the three tasks at each budget.
+Nothing is claimed from a probe.
+
+**(g) What a result would mean, written before seeing one.** A COCONUT gain over
+PubChem at matched size, surviving connectivity exclusion, would say a
+natural-product corpus teaches something about natural-product chemical space
+that a general corpus does not. No gain would say that whatever PubChem's
+natural-product fraction already carries is enough at this corpus size, which
+after Stage D is a real possibility. Both answers are reportable and neither is
+the one this study needs.
+
+What neither answer licenses is a claim about biosynthetic origin. The label is
+the organism a compound was isolated from, resolved by a priority rule, and the
+authors say so themselves.

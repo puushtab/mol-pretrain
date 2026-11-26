@@ -44,12 +44,13 @@ from natural_compounds.cache import (
 )
 from natural_compounds.cache import (
     apply_clean,
+    connectivity_path,
     load,
     proximity_manifest_path,
     proximity_path,
     resolve,
 )
-from natural_compounds.chem import canonicalize
+from natural_compounds.chem import canonicalize, connectivity_key
 from natural_compounds.config import load_config
 from natural_compounds.experiments import Condition, condition_dict, expand_conditions
 from natural_compounds.paths import CONFIGS, DATA_PROCESSED, ensure_dirs, resolve_source
@@ -140,7 +141,14 @@ def filter_benchmark_proximity(
     return kept
 
 
-def benchmark_molecules(task_names: list[str]) -> set[str]:
+def benchmark_molecules(task_names: list[str], identity: str = "canonical") -> set[str]:
+    """The benchmark's molecules, keyed the way the draw will match them.
+
+    `canonical` keeps stereochemistry and is the key every Stage C and Stage D
+    arm used. `connectivity` strips it from the benchmark side; the pool side is
+    stripped by the sidecar that `prepare` joins. Amendment 19.
+    """
+    key = canonicalize if identity == "canonical" else connectivity_key
     molecules: set[str] = set()
     for name in task_names:
         cfg = load_config(CONFIGS / "tasks" / f"{name}.yaml")
@@ -149,13 +157,56 @@ def benchmark_molecules(task_names: list[str]) -> set[str]:
             raise SystemExit(f"task file not found: {path}")
         frame = pl.read_csv(path, infer_schema_length=0)
         for smiles in frame[cfg["smiles_column"]].to_list():
-            canonical = canonicalize(str(smiles))
-            if canonical:
-                molecules.add(canonical)
+            keyed = key(str(smiles))
+            if keyed:
+                molecules.add(keyed)
     return molecules
 
 
-def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: bool) -> None:
+def pool_keys(frame: pl.DataFrame, cfg: dict, identity: str) -> pl.Series:
+    """The column a benchmark set is matched against, under one identity.
+
+    Under `canonical` that is the cache's own `smiles`. Under `connectivity` it
+    is the sidecar written by `scripts/connectivity_keys.py`, joined on
+    `source_row`. The join is checked rather than trusted: a sidecar built
+    against a different build of the cache has keys that no longer line up, and
+    a silently-missing key would leave a benchmark molecule in the draw.
+    """
+    if identity == "canonical":
+        return frame["smiles"]
+
+    cache = resolve(cfg)
+    path = connectivity_path(cache)
+    if not path.exists():
+        raise SystemExit(
+            f"--identity connectivity needs the stereochemistry-free key of the {cache} "
+            f"cache and {path} is missing. Write it once with:\n"
+            f"  uv run python scripts/connectivity_keys.py configs/corpora/{cache}.yaml"
+        )
+    keys = pl.read_parquet(path)
+    joined = frame.select("source_row").join(keys, on="source_row", how="left")
+    if len(joined) != len(frame):
+        raise SystemExit(
+            f"joining {path} changed the row count from {len(frame)} to {len(joined)}; "
+            "the sidecar holds duplicate source_row keys and cannot be used."
+        )
+    missing = int(joined["connectivity"].is_null().sum())
+    if missing:
+        raise SystemExit(
+            f"{missing} of {len(frame)} molecules have no connectivity key. The sidecar at "
+            f"{path} was written against a different build of the {cache} cache. "
+            "Rewrite it with --force."
+        )
+    return joined["connectivity"]
+
+
+def prepare(
+    cfg: dict,
+    condition: Condition,
+    task_names: list[str],
+    exclude: bool,
+    identity: str = "canonical",
+) -> None:
     # The exclusion itself lives under `if task_names` below, while the name
     # does not, so without a task this would write an untouched draw under the
     # _noleak name: a sensitivity arm that excluded nothing and says otherwise.
@@ -177,14 +228,18 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     frame = filter_benchmark_proximity(frame, cfg, stats, task_names)
 
     benchmark: set[str] = set()
+    keys = None
     if task_names:
-        benchmark = benchmark_molecules(task_names)
-        overlap = frame["smiles"].is_in(benchmark)
+        benchmark = benchmark_molecules(task_names, identity)
+        keys = pool_keys(frame, cfg, identity)
+        overlap = keys.is_in(benchmark)
+        stats["benchmark_identity"] = identity
         stats["benchmark_molecules"] = len(benchmark)
         stats["pool_benchmark_overlap"] = int(overlap.sum())
         stats["benchmark_overlap_removed"] = exclude
         if exclude:
             frame = frame.filter(~overlap)
+            keys = keys.filter(~overlap)
 
     order = np.random.default_rng(condition.seed).permutation(len(frame))
     if condition.size is not None:
@@ -202,8 +257,18 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
 
     # The count that matters for the size curve. Exposure to benchmark molecules
     # grows with the corpus, so it moves together with the variable under study.
+    #
+    # Counted under the same key the exclusion used. Counting a connectivity
+    # exclusion on canonical SMILES would report zero whatever was left behind,
+    # which is the failure docs/np-task-selection.md section 2a describes.
     if benchmark:
-        stats["sample_benchmark_overlap"] = int(sample["smiles"].is_in(benchmark).sum())
+        sampled_keys = keys[order.tolist()] if keys is not None else sample["smiles"]
+        stats["sample_benchmark_overlap"] = int(sampled_keys.is_in(benchmark).sum())
+        if exclude and stats["sample_benchmark_overlap"]:
+            raise SystemExit(
+                f"{stats['sample_benchmark_overlap']} benchmark molecules survived an "
+                f"exclusion on the {identity} key. Nothing was written."
+            )
 
     # What exclusion by exact canonical SMILES leaves behind. Amendment 18(c)
     # keeps that rule, the rule every other arm used, so a draw selected for
@@ -243,9 +308,15 @@ def prepare(cfg: dict, condition: Condition, task_names: list[str], exclude: boo
     # produces a file that pretrain.py cannot name and compute_descriptors.py
     # has to be pointed at by hand. As a corpus it simply becomes another
     # condition: `pretrain.py pubchem_noleak 100000 0` works unchanged.
-    written = Condition(
-        condition.corpus + ("_noleak" if exclude else ""), condition.size, condition.seed
-    )
+    # `_noleakskel` and not `_noleak`. The two keys leave different populations
+    # behind — on COCONUT the canonical key removes 1.26 percent of the pool and
+    # the connectivity key 19.7 — so a shared name would make two different
+    # corpora indistinguishable on disk, and every tool downstream names a
+    # checkpoint after its corpus. Amendment 19(d).
+    suffix = ""
+    if exclude:
+        suffix = "_noleak" if identity == "canonical" else "_noleakskel"
+    written = Condition(condition.corpus + suffix, condition.size, condition.seed)
     sample.select("smiles").write_csv(out_dir / written.corpus_file)
     sample.select(["smiles", "source_row"]).write_parquet(
         out_dir / f"{written.run_id}.provenance.parquet"
@@ -268,6 +339,17 @@ def main() -> None:
         "<corpus>_noleak_nSIZE_sSEED, leaving the ordinary arm alone. Describe and "
         "pretrain it exactly like any other condition.",
     )
+    parser.add_argument(
+        "--identity",
+        choices=("canonical", "connectivity"),
+        default="canonical",
+        help="how a pool molecule is matched to a benchmark molecule. `canonical` keeps "
+        "stereochemistry and is what every Stage C and Stage D arm used; the default "
+        "never moves, so those corpora stay reproducible byte for byte. `connectivity` "
+        "strips stereochemistry from both sides, which is the only basis on which a "
+        "benchmark carrying none can be compared to a stereospecified corpus, and "
+        "writes the draw as <corpus>_noleakskel_nSIZE_sSEED. Amendment 19(d).",
+    )
     args = parser.parse_args()
     ensure_dirs()
 
@@ -278,14 +360,14 @@ def main() -> None:
         print(f"{experiment['name']}: {len(conditions)} conditions")
         for condition in conditions:
             cfg = load_config(CONFIGS / "corpora" / f"{condition.corpus}.yaml")
-            prepare(cfg, condition, tasks, args.exclude_benchmarks)
+            prepare(cfg, condition, tasks, args.exclude_benchmarks, args.identity)
         return
 
     if not args.corpus_config:
         parser.error("give a corpus config, or --experiment")
     cfg = load_config(args.corpus_config)
     condition = Condition(cfg["name"], args.size, args.seed)
-    prepare(cfg, condition, args.task, args.exclude_benchmarks)
+    prepare(cfg, condition, args.task, args.exclude_benchmarks, args.identity)
 
 
 if __name__ == "__main__":
