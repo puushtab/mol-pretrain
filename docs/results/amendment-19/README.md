@@ -145,12 +145,99 @@ Selecting from a ten-point regularisation grid on 12 validation molecules is
 noisy, and that is the regime rather than a defect — fine-tuning early-stops on
 the same 12.
 
-## Mordred is missing from the probe
+## What the first pass measured
 
-Deliberately, for one night: Mordred over 60,170 molecules is a single-threaded
-hour and the slope question does not need it. It is the baseline that decides
-whether a headline number means anything, because CheMeleon's pretraining target
-*is* those descriptors, so it goes in before anything is claimed.
+Everything above was written before any encoder ran. This section is the result.
+
+| job | elapsed | outcome |
+|---|---|---|
+| splits 30572217 | 6m39s | COMPLETED |
+| descriptors 30572218 | 21m38s | COMPLETED |
+| probe 30573234 | 16m55s | COMPLETED, 486 cells |
+| pretrain n5000 30572220 | 1h07m | COMPLETED |
+| pretrain n25000 30572221 | — | running at the time of writing |
+
+`evaluate.py` reports each arm against the spread across splits, and that spread
+is several times any difference between arms, so every interval there overlaps
+every other and the table answers nothing. `scripts/np_origin_paired.py` pairs
+instead: every arm sees the same molecules in the same frozen splits at the same
+budget, so the split variance cancels. Nine paired cells per number, three tasks
+by three splits. The intervals below are normal-theory intervals over those
+nine, not a registered test.
+
+**The size curve has a real slope.** PubChem 100,000 minus PubChem 500, paired:
+
+| budget | mean | sd | cells positive |
+|---:|---:|---:|---:|
+| 100 | **+7.59** | 2.06 | 9 of 9 |
+| 500 | +5.68 | 1.43 | 9 of 9 |
+| 1,000 | +5.49 | 1.75 | 9 of 9 |
+
+Every pair in the same direction at every budget. That is the question the probe
+was launched to answer, and the answer is yes.
+
+**Most of that slope is a recovery, not a gain.** Against `random`, an untrained
+encoder of the same architecture, pooled over the nine cells:
+
+| arm | 100 | 500 | 1,000 |
+|---|---:|---:|---:|
+| pubchem 500 | **−5.62** (0 of 9) | −3.21 (0 of 9) | −3.38 (0 of 9) |
+| pubchem 1,000 | −3.03 | −2.67 | −1.59 |
+| pubchem 5,000 | −0.36 | +0.87 | +0.18 |
+| pubchem 10,000 | −0.19 | +2.23 | +1.41 |
+| pubchem 25,000 | +0.98 | +2.39 | +1.07 |
+| pubchem 50,000 | +1.86 | +2.66 | +1.46 |
+| pubchem 100,000 | +1.98 | +2.46 | +2.11 |
+| released, 944,286 | +1.34 | +2.70 | +1.62 |
+| morgan, no encoder | +1.90 | +0.51 | +0.13 |
+
+Pretraining on a few hundred molecules leaves an encoder **worse than one that
+was never trained at all**, consistently: 0 of 9 cells positive at every budget
+for the 500-molecule draw. The curve crosses zero between 5,000 and 10,000 and
+flattens by 25,000. From 25,000 to 944,286 — a factor of 38 — nothing moves
+outside the intervals.
+
+**The ceiling is low.** The best arm is about +2 AUROC points over an untrained
+encoder, and the released checkpoint does not beat `pubchem_50000`. Against
+Morgan bits the best arms sit between +1 and +3 points, and at 100 labels on the
+bacterial task every PubChem arm is *below* Morgan. This is 19(h) arriving as a
+measurement: the room on this benchmark is small and the apparatus uses little
+of it.
+
+**The exposure upper bound is not above the clean curve.** `coconut_noleak_n25000_s0`,
+roughly a fifth of which is literal benchmark structures on the connectivity key,
+scores +0.95 / +3.25 / +2.02 against `random` where `pubchem_n25000` scores
++0.98 / +2.39 / +1.07. The intervals overlap throughout. A corpus containing
+thousands of the test molecules did not separate from one that does not, which
+sets expectations for the clean COCONUT arms rather than replacing them.
+
+Nothing here is a registered result. 19(f) makes the probe exploratory and the
+fine-tuning path primary, and a frozen encoder with a ridge head is the setting
+least able to show what pretraining did. The negative readings above are reasons
+to doubt a large effect, not evidence of its absence.
+
+## The second pass
+
+| job | id | what |
+|---|---|---|
+| mordred | 30581597 | the missing baseline arm, CPU, no GPU needed |
+| coconut | 30581598 | both `coconut_noleakskel` arms, then rescores all of `runs/probe_np/` |
+
+`afterok:30572221:30581597`, so the COCONUT arms wait for their own second
+checkpoint and for Mordred, and one scoring pass covers the campaign.
+
+**Mordred was missing from the first pass**, deliberately, for one night:
+measured at 98 ms per molecule single-threaded in `probe.py`, so 1.6 hours over
+60,170 molecules, and the slope question did not need it. It is the baseline that
+decides whether a headline number means anything, because CheMeleon's
+pretraining target *is* those descriptors — an encoder that beats Morgan bits but
+not Mordred descriptors has shown a descriptor effect and not a corpus effect.
+Given how small the margins above turned out, this arm now matters more than it
+did when it was cut.
+
+The size-matched contrast the hypothesis actually asks for is
+`coconut_noleakskel_n25000_s0` against `pubchem_n25000_s{0,1}`, paired on split.
+It is one encoder against two, at one draw each, in the exploratory setting.
 
 ## Unrelated, found while working here
 
