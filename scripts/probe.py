@@ -24,8 +24,10 @@ comparable to each other.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
+import re
 import warnings
 from pathlib import Path
 
@@ -295,14 +297,36 @@ def label_subset(indices: list[int], count: int | None, seed: int) -> np.ndarray
     return np.random.default_rng(seed).choice(order, size=count, replace=False)
 
 
+ARM_PATTERN = re.compile(r"(?P<corpus>.+?)_n(?P<size>\d+)_s(?P<seed>\d+)$")
+
+
+def arm_corpus(name: str) -> str | None:
+    """The corpus an arm was pretrained on, read off its run name.
+
+    This used to be hardcoded to `pubchem`, which was true while the probe only
+    globbed `pubchem_n*_s*` and silently wrong the moment it did not: a COCONUT
+    arm would have been filed under `corpus: pubchem` and averaged into the
+    PubChem size curve by `evaluate.py`, which groups on that field.
+    """
+    found = ARM_PATTERN.fullmatch(name)
+    return None if found is None else found.group("corpus")
+
+
 def arms(only: list[str] | None) -> list[tuple[str, str, int | None, int | None]]:
-    """(name, kind, size, pretrain_seed) for every arm the probe can run."""
+    """(name, kind, size, pretrain_seed) for every arm the probe can run.
+
+    Every checkpoint under runs/pretrain/ named `<corpus>_n<size>_s<seed>`, not
+    just the PubChem ones. Amendment 19 puts a COCONUT size curve beside the
+    PubChem one, and both are read from the same place.
+    """
     found: list[tuple[str, str, int | None, int | None]] = []
-    for directory in sorted((RUNS / "pretrain").glob("pubchem_n*_s*")):
+    for directory in sorted((RUNS / "pretrain").glob("*_n*_s*")):
         if not (directory / "best.pt").exists():
             continue
-        size, seed = directory.name.replace("pubchem_n", "").split("_s")
-        found.append((directory.name, "ours", int(size), int(seed)))
+        parsed = ARM_PATTERN.fullmatch(directory.name)
+        if parsed is None:
+            continue
+        found.append((directory.name, "ours", int(parsed.group("size")), int(parsed.group("seed"))))
     if RELEASED.exists():
         found.append(("released", "released", 944286, None))
     found.append(("random", "random", None, None))
@@ -313,9 +337,30 @@ def arms(only: list[str] | None) -> list[tuple[str, str, int | None, int | None]
     return found
 
 
+def molecule_key(smiles: list[str]) -> str:
+    """A short digest of the molecules a feature matrix was computed for.
+
+    The cache used to be keyed on the task name, which was right while one task
+    meant one set of molecules. Amendment 19's three one-versus-rest tasks share
+    their 60,170 molecules exactly, so keying on the name would embed them three
+    times and store three identical 985 MB matrices per arm. Keying on the
+    molecules shares the work and, unlike the name, cannot go stale: a task
+    whose source file changes gets a different key rather than a wrong cache.
+    """
+    digest = hashlib.sha256()
+    for s in smiles:
+        digest.update(s.encode())
+        digest.update(b"\n")
+    return digest.hexdigest()[:16]
+
+
 def representation(name: str, kind: str, smiles: list[str], task: str) -> np.ndarray:
-    """Features for one arm, cached so a rerun costs nothing."""
-    cache = DATA_PROCESSED / "probe_features" / f"{name}__{task}.npy"
+    """Features for one arm, cached so a rerun costs nothing.
+
+    `task` is accepted for the message only. The cache is keyed on the molecules,
+    so arms shared between tasks over one dataset are computed once.
+    """
+    cache = DATA_PROCESSED / "probe_features" / f"{name}__{molecule_key(smiles)}.npy"
     cache.parent.mkdir(parents=True, exist_ok=True)
     if cache.exists():
         return np.load(cache)
@@ -347,6 +392,22 @@ def main() -> None:
         action="store_true",
         help="cap standardised features at sqrt(n_train - 1); off reproduces runs/probe/",
     )
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        action="append",
+        default=None,
+        help="run only these split seeds, instead of the task config's ten. The splits "
+        "stay frozen at ten either way; this only narrows what is fitted now. "
+        "Repeatable.",
+    )
+    parser.add_argument(
+        "--label-count",
+        action="append",
+        default=None,
+        help="run only these budgets, instead of the task config's. `all` means every "
+        "label. Repeatable.",
+    )
     args = parser.parse_args()
     if args.clip_features and args.out == RUNS / "probe":
         raise SystemExit("--clip-features needs its own --out, so it cannot mix with runs/probe/")
@@ -370,9 +431,15 @@ def main() -> None:
             features = representation(name, kind, smiles, task)
             print(f"  {task} {name}: features {features.shape}", flush=True)
 
-            for split_seed in cfg["seeds"]:
+            seeds = args.split_seed or cfg["seeds"]
+            counts = (
+                [None if c in ("all", "None", "null") else int(c) for c in args.label_count]
+                if args.label_count
+                else cfg["label_counts"]
+            )
+            for split_seed in seeds:
                 split = json.loads((splits_dir / f"seed{split_seed}.json").read_text())
-                for count in cfg["label_counts"]:
+                for count in counts:
                     train = label_subset(split["train"], count, split_seed)
                     test = np.asarray(split["test"])
                     train_y = target[train]
@@ -412,7 +479,7 @@ def main() -> None:
                     (run / "manifest.json").write_text(
                         json.dumps(
                             {
-                                "corpus": name if kind != "ours" else "pubchem",
+                                "corpus": arm_corpus(name) or name if kind == "ours" else name,
                                 "size": size,
                                 "seed": split_seed,
                                 "pretrain_seed": pretrain_seed,

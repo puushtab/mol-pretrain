@@ -1215,3 +1215,37 @@ the one this study needs.
 What neither answer licenses is a claim about biosynthetic origin. The label is
 the organism a compound was isolated from, resolved by a priority rule, and the
 authors say so themselves.
+
+**(h) A correction to (c), measured before any encoder ran.** 19(c) justifies
+the budgets by Léonard's screening curve, where a Morgan forest reaches 0.430
+balanced accuracy at 100 labels against a three-class chance of 0.333, and
+concludes there are thirty to forty points of headroom. **That number does not
+transfer to the metric this amendment scores.** Balanced accuracy on the
+three-class problem and AUROC on a one-versus-rest task are different
+quantities: AUROC is threshold-free, it is computed on a binary split whose
+positive rate is 0.18 to 0.56 rather than on three classes at once, and it does
+not fall to chance when a classifier's decision threshold is badly placed.
+
+Measured here on split seed 0 with the clipped probe, Morgan bits and no
+encoder:
+
+| budget | plant | fungal | bacterial |
+|---:|---:|---:|---:|
+| 100 | 0.813 | 0.708 | 0.805 |
+| 1,000 | 0.884 | 0.814 | 0.894 |
+
+So the baseline is already strong at the budget 19(c) calls well powered, and
+the headroom above it is roughly ten to nineteen points at 100 labels rather
+than thirty to forty, compressing further as AUROC approaches 1. One split, one
+baseline, one seed: this is screening and is quoted as such.
+
+Nothing in the registered design changes on this. The budgets, splits, tasks and
+exclusion key stand as written in (a) to (d), and they are not retuned after
+seeing a baseline. What changes is the claim the design rests on: **this is a
+narrower test than 19(c) says**, the fungal task has the most room and the
+lowest baseline of the three, and if the encoders land inside a few points of
+Morgan at every budget, that is the expected outcome of a narrow test and not
+evidence that pretraining does nothing.
+
+Recorded rather than quietly edited, and recorded before any encoder existed, so
+the design cannot later be described as having anticipated its own result.
