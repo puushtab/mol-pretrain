@@ -26,7 +26,7 @@ Redraw with `.venv/bin/python scripts/plot_benchmark_panel.py`.
 | | Biological origin | Vapour pressure | PTP1B inhibition |
 |---|---|---|---|
 | **What** | plant / fungal / bacterial provenance | measured vapour pressure at 25 °C | inhibition of protein-tyrosine phosphatase 1B |
-| **Molecules** | 60,170 | 2,368 | 460 |
+| **Molecules** | 60,170 | 2,368 | 457 |
 | **Task** | 3 one-vs-rest binary | regression | regression |
 | **Label** | AUROC | RMSE, log10(P/mmHg) | RMSE, pIC50 |
 | **Budgets** | 100 / 500 / 1,000 / 5,000 | 100 / 500 / 1,000 / all | 50 / 100 / all |
@@ -121,17 +121,62 @@ endpoint, and `VP_2.9_update.csv` in the same archive carries an explicit unit
 column reading mmHg for all 3,945 of its rows on the same scale. No conversion
 applied. Range −13.68 to +5.67, median −0.96.
 
-**Caveats.** Only 4 of 2,368 SMILES carry any stereochemistry, because OPERA's
-curation strips it — so every corpus compared on this task must be excluded on
-the **connectivity** key, exactly as the origin benchmark requires. Six rows
-report a salt or solvate measurement against the desalted parent structure.
-Censoring cannot be audited: there is no qualifier column, so upstream censoring
-would be invisible. Two rows have an RDKit InChIKey disagreeing with the stored
-one; the structure field was treated as authoritative.
+**The split is the worst thing about this task, and it was found by the
+adversarial check rather than by the acquisition.** 1,120 of 2,368 molecules
+(47 %) are acyclic, and RDKit returns the *empty string* as the Murcko scaffold
+for every one of them, so they form a single scaffold group that a scaffold
+split cannot divide. It lands whole in train on all ten seeds, so **the test set
+contains zero acyclic molecules on every seed**, with a train-to-test label mean
+shift of 1.9 to 3.7 log units. Acyclic molecules are also the volatile end of
+this benchmark, which is the end a volatility question is about.
+
+Worse for the statistics: the acyclic group plus the benzene-scaffold group is
+1,588 of the 1,894 training rows, so **84 % of the training set is identical on
+every seed** and the ten splits are not ten independent splits. Train /
+validation / test sizes come out byte-identical for all ten.
+
+It is kept and disclosed rather than patched, for three reasons. Every arm is
+scored on the same splits, so the paired differences the campaign reports are
+unaffected by a biased test set. The same pooling already applies to ESOL (28 %
+acyclic) in the committed Stage B and C results, and a different rule here would
+make them incomparable. And the PubChem-redraw noise floor measures the lost
+independence empirically, so the cost lands in the number that decides what may
+be claimed rather than in an assertion. Clustering the acyclic molecules by
+fingerprint similarity is the fix, and it is a change to the split recipe, which
+is an amendment.
+
+**Other caveats.** Only 4 of 2,368 SMILES carry any stereochemistry, because
+OPERA's curation strips it — so every corpus compared on this task must be
+excluded on the **connectivity** key. Six rows report a salt or solvate
+measurement against the desalted parent structure, the worst being 2,4-D, whose
+dimethylamine salt value sits under the free acid's structure and is wrong by
+4.9 log units. 89 rows exceed 1 atm, and several of those compounds are above
+their critical temperature at 25 °C, so no vapour pressure physically exists for
+them (methane at +5.67 is 612 atm). Censoring cannot be audited: there is no
+qualifier column, so upstream censoring would be invisible. RMSE here is
+dominated by the tails (range −13.68 to +5.67, sd 3.48) and **must not be
+compared to OPERA's published RMSE of ~0.7**, which is a different split and
+includes the non-25 °C rows.
+
+Seventeen named molecules were checked against published values and match to a
+mean absolute error of 0.03 log units (benzene +1.977 vs +1.98, naphthalene
+−1.071 vs −1.07), so the structure-to-label join is right.
 
 ## Dataset 3 — PTP1B inhibition (acquired today)
 
-**460 natural products**, target pIC50 = −log10(IC50 in mol/L).
+**457 natural products**, target pIC50 = −log10(IC50 in mol/L).
+
+**Three molecules were the wrong enzyme entirely, and they were the top of the
+potency range.** NPASS v2.0 maps microcystin-LR, tautomycin and okadaic acid to
+this target. All three are canonical PP1/PP2A *serine-threonine* phosphatase
+inhibitors; PTP1B is a protein *tyrosine* phosphatase. Left in, they would have
+been the three easiest and most influential points in a 460-molecule regression,
+and every arm would have been scored partly on predicting a mis-annotation.
+Removing them moves the maximum from pIC50 9.47 to 6.47 and the standard
+deviation from 0.648 to 0.566 — the label range shrinks by a third. Dropped by
+`scripts/curate_ptp1b_targets.py`, which matches on molecular formula and
+refuses to run if a formula matches anything other than exactly one row. Found
+by the adversarial verification, not by the acquisition.
 
 Target identity confirmed rather than inferred: NaFM labels it only `NPT178`,
 and both NPASS v2.0 and NPASS 3.0 map `NPT178` to "Protein-tyrosine phosphatase
@@ -156,11 +201,22 @@ were nM. 42 compounds had more than one usable IC50 and were collapsed by
 median, with a median spread of 0.26 log units but a **worst case of 4.0 log
 units** — a 10,000-fold disagreement between literature reports of one compound.
 
-**Expect this task to be underpowered, and say so.** 460 molecules means a
-scaffold training split of 368. The budgets are 50 / 100 / all, with no 500
-because it does not exist. The published "612 samples" is a count of records
-whose labels are unusable as published, not a count of molecules with consistent
-units.
+**Residual contamination, disclosed not removed.** No assay-organism filter was
+applied: 3 kept records are *Yersinia enterocolitica*, which is YopH, a
+bacterial tyrosine phosphatase and again a different enzyme; 52 carry organism
+`n.a.`; about 27 molecules have no human-assayed record at all. Twenty-three
+groups covering 47 rows are distinguished from another row by **stereochemistry
+alone**, so 457 rows stand on about 433 distinct constitutions — and a corpus
+exclusion on the connectivity key collapses pairs this benchmark treats as
+different molecules.
+
+**Expect this task to be underpowered, and say so.** 457 molecules means a
+scaffold training split of about 365. The budgets are 50 / 100 / all, with no
+500 because it does not exist. Label sd is 0.566. The published "612 samples" is
+a count of records whose labels are unusable as published, not a count of
+molecules with consistent units. Dropping the 138 censored records also biases
+the set toward compounds that had a measurable IC50, so genuine inactives are
+under-represented.
 
 ## Leakage and exclusion
 
@@ -182,10 +238,28 @@ GPU-hours each, which would displace work already running. It does not explain
 the origin result, because the arm that kept its exposure is the one that failed
 to pull ahead — but it has to be stated with any number.
 
-A full audit of every corpus against every benchmark on the connectivity key is
-being computed; it will land as `exclusion-audit.md` and `exclusion-audit.csv`
-beside this file. **Neither new benchmark has been audited yet**, and no claim
-that depends on exclusion may rest on them until it is.
+The full audit is done: 40 corpora × 5 benchmarks, 200 pairs, in
+[`exclusion-audit.md`](exclusion-audit.md) and `exclusion-audit.csv`, rebuilt by
+`scripts/exclusion_audit.py`. Three findings change how results must be read.
+
+**The released CheMeleon checkpoint has seen almost everything.** Its
+distributed pretraining pool contains **97.9 % of the vapour-pressure
+benchmark**, 93.5 % of ESOL and 81.9 % of BBBP, against 2.2–2.5 % for our
+25,000-molecule arms — a twenty- to thirty-fold gap. Every "released versus
+scratch" number in this project, including the ones already reported, is a
+comparison against a model that has seen the test molecules. It is still a fair
+*ceiling* for what a big public corpus buys; it is not a clean corpus contrast.
+
+**No arm of any corpus was ever excluded against vapour pressure or PTP1B**,
+because neither benchmark existed when any draw was taken. Exposure there is
+small (0.0–1.1 % of a corpus) but it is uneven: on PTP1B, COCONUT arms are
+twelve times more exposed than PubChem arms, and on vapour pressure the
+near-benchmark PubChem arms are six times more exposed than COCONUT.
+
+**All four ZINC families are at exactly zero** against vapour pressure, PTP1B,
+BBBP and ESOL, and near-zero against the origin benchmark. So any comparison
+involving a ZINC arm is an exposure comparison as well as a chemistry
+comparison, in ZINC's disfavour.
 
 ## What is launched
 
@@ -208,22 +282,39 @@ skipping any line whose splits are not frozen yet. Job ids accumulate in
 ## Issues a reader must carry
 
 1. **The new benchmarks have no noise floor yet.** Until the PubChem-redraw
-   pairing is computed on each, nothing on them is interpretable. 460 molecules
+   pairing is computed on each, nothing on them is interpretable. 457 molecules
    on PTP1B will almost certainly give a floor wider than any effect worth
    finding; that is a result about the benchmark, and should be reported as one.
-2. **The exclusion asymmetry above**, and the fact that neither new benchmark
-   has been audited for overlap at all.
-3. **PTP1B's label disagrees with its own source paper**, deliberately. Any
+2. **The vapour-pressure test set contains no acyclic molecules on any seed**,
+   and 84 % of its training set is shared across all ten. Paired contrasts
+   survive this; seed-to-seed intervals do not, and will read narrower than the
+   truth.
+3. **The released checkpoint has seen 98 % of the vapour-pressure benchmark**,
+   93 % of ESOL and 82 % of BBBP. Treat it as a ceiling, never as a corpus arm.
+4. **The exclusion asymmetry on the origin benchmark**, and the fact that no
+   corpus was ever excluded against either new benchmark.
+5. **PTP1B's label disagrees with its own source paper**, deliberately. Any
    comparison against published NaFM numbers needs the conversion stated above.
-4. **Vapour pressure is 2,368, not 2,716**, because of the 25 °C filter. It is a
-   different task from the one the paper scores.
-5. **Replicate disagreement on PTP1B reaches 4.0 log units** for one compound.
+   Three mis-annotated rows were removed after acquisition; residual
+   organism contamination is disclosed, not removed.
+6. **Vapour pressure is 2,368, not 2,716**, because of the 25 °C filter. It is a
+   different task from the one the paper scores, and its RMSE is not comparable
+   to OPERA's published ~0.7.
+7. **Replicate disagreement on PTP1B reaches 4.0 log units** for one compound.
    That is an irreducible ceiling on what any model can score.
-6. **`coconut_noleak` is not a COCONUT arm.** It is the exposed corpus, included
+8. **`coconut_noleak` is not a COCONUT arm.** It is the exposed corpus, included
    as a leakage sensitivity check. It must never be quoted as "COCONUT".
-7. **Three origin tasks are one benchmark read three times.** They share
+9. **Three origin tasks are one benchmark read three times.** They share
    molecules and splits, so they buy no multiple-testing credit.
-8. **Nothing here is a registered amendment.** Amendment 19 covers the origin
+10. **`runs/slurm/a19-code.sha256` no longer verifies for `scripts/probe.py`.**
+    The file was changed on 26 November to compute Mordred in parallel and
+    committed, after the digest was taken. Two of the verification agents found
+    this independently. The 486 first-pass probe cells ran under the recorded
+    digest; the 27 Mordred cells ran under the changed file, whose digest is now
+    recorded beside it in `a19-code-after-mordred.sha256`. The change touched
+    only `features_mordred`, so no other arm is affected, but the campaign has
+    two code versions and the record has to say so.
+11. **Nothing here is a registered amendment.** Amendment 19 covers the origin
    benchmark; the two new benchmarks are not in `docs/protocol.md` and were
    added after the origin scores were read. They are exploratory until an
    amendment says otherwise, and Léonard has signed none of 16 to 19.

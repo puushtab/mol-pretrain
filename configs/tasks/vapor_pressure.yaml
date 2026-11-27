@@ -32,6 +32,33 @@
 # documented conditions or source they were dropped before anything else, which
 # leaves the paper's own 2,711 train+test records as the starting point.
 #
+# --- THE SPLIT IS THE WORST PROBLEM WITH THIS TASK. Read this before any
+# number from it is interpreted. 1,120 of 2,368 molecules (47%) are acyclic,
+# and RDKit's MurckoScaffoldSmiles returns the empty string for every one of
+# them, so they form a SINGLE scaffold group. With a scaffold split that group
+# cannot be divided: it lands whole in train on all ten seeds, and the test set
+# therefore contains ZERO acyclic molecules on every seed, with a train-to-test
+# label mean shift of 1.9 to 3.7 log units. Acyclic molecules are also the
+# volatile end of this benchmark, which is the end a volatility question cares
+# about.
+#
+# A second consequence: the ten seeds are not ten independent splits. The
+# acyclic group (1,120) plus the benzene-scaffold group (468) is 1,588 of the
+# 1,894 training rows, so 84% of the training set is identical on every seed
+# and only about 306 rows move. Train/validation/test sizes come out
+# byte-identical (1894/236/238) for all ten. Seed-to-seed intervals on this
+# task will therefore understate the real split variance.
+#
+# It is kept as it stands, for three reasons, and disclosed rather than
+# patched: every arm is scored on the same splits, so the paired differences
+# the campaign actually reports are unaffected by a biased test set; the same
+# pooling already applies to esol (28% acyclic) in the committed Stage B and C
+# results, and a different rule here would make the two incomparable; and the
+# PubChem-redraw noise floor measures the lost independence empirically rather
+# than by assertion, so the cost shows up in the number that decides what can
+# be claimed. Clustering the acyclic molecules by fingerprint similarity is the
+# fix, and it is a change to the split recipe, which is an amendment.
+#
 # Caveats a reader of the results needs:
 #   - Almost no stereochemistry. Only 4 of 2,368 SMILES carry any stereo marker,
 #     because OPERA's QSAR-ready curation strips it. Every corpus arm compared on

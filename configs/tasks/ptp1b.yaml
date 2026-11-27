@@ -1,4 +1,4 @@
-# PTP1B (protein-tyrosine phosphatase 1B) inhibition, 460 natural products.
+# PTP1B (protein-tyrosine phosphatase 1B) inhibition, 457 natural products.
 # Regression on pIC50. Measured, not predicted.
 #
 # Target identity is confirmed, not inferred. The NaFM release labels this
@@ -29,14 +29,36 @@
 # moves 134 of their 612 compounds. Dropping them is the main reason this file
 # is smaller than the paper's 612.
 #
-# --- UNIT CONTAMINATION. 34 exact IC50 records are in ug.mL-1, which cannot
+# --- UNIT CONTAMINATION. 27 exact IC50 records are in ug.mL-1, which cannot
 # be converted to molar without assuming a molecular weight, so they are
 # dropped. NaFM took their numeric value as if it were nM, which is wrong by
 # orders of magnitude for the 32 compounds involved.
 #
-# --- SIZE. 460 unique molecules, so a 0.8 scaffold train split is 368. That
-# is small, and it is the honest number: 612 is a sample count over 612 np_ids
-# whose labels are unusable as published, not a count of molecules with
+# --- WRONG TARGET, REMOVED. NPASS v2.0 maps three canonical PP1/PP2A
+# serine-threonine phosphatase inhibitors to NPT178: microcystin-LR,
+# tautomycin and okadaic acid. PTP1B is a protein *tyrosine* phosphatase, so
+# these are measurements of a different enzyme. Between them they were the
+# entire top of the potency range; dropping them moves the maximum from pIC50
+# 9.47 to 6.47 and the standard deviation from 0.648 to 0.566. Removed by
+# scripts/curate_ptp1b_targets.py, 460 -> 457 rows. Found by adversarial
+# verification of the acquired file, not by the acquisition itself.
+#
+# --- ORGANISM IS NOT FILTERED. 3 kept records are Yersinia enterocolitica,
+# which is YopH, a bacterial tyrosine phosphatase and again a different enzyme;
+# 52 records carry organism 'n.a.' and 2 are rabbit. About 27 of the molecules
+# have no human-assayed record at all. Not removed, because removing them
+# would cut the set further and the contamination is disclosed rather than
+# silent, but a result on this task must say so.
+#
+# --- STEREOCHEMISTRY CARRIES LABELS. 23 groups covering 47 of the rows are
+# distinguished from another row by stereochemistry alone: 457 rows stand on
+# about 433 distinct constitutions. Any corpus exclusion done on the
+# connectivity key therefore collapses pairs this benchmark treats as
+# different molecules.
+#
+# --- SIZE. 457 unique molecules, so a 0.8 scaffold train split is about 365.
+# That is small, and it is the honest number: 612 is a sample count over 612
+# np_ids whose labels are unusable as published, not a count of molecules with
 # consistent units. Expect this task to be underpowered.
 #
 # Replicate disagreement is real: 42 compounds had more than one usable IC50
