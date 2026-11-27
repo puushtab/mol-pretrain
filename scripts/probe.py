@@ -184,18 +184,14 @@ def features_mordred(smiles: list[str]) -> np.ndarray:
     The baseline that decides whether our headline number means anything:
     CheMeleon's pretraining target *is* these descriptors, so without this arm a
     corpus effect and a descriptor effect cannot be told apart.
-    """
-    from mordred import Calculator, descriptors
-    from rdkit import Chem, RDLogger
 
-    RDLogger.DisableLog("rdApp.*")
-    calculator = Calculator(descriptors, ignore_3D=True)
-    out = np.zeros((len(smiles), len(calculator.descriptors)), dtype=np.float64)
-    for i, s in enumerate(smiles):
-        mol = Chem.MolFromSmiles(s)
-        if mol is not None:
-            out[i] = np.asarray(calculator(mol), dtype=np.float64)
-    return out
+    Computed in parallel over the job's cores and kept raw on disk by
+    `natural_compounds.mordred_store`, so it is paid for once per molecule list
+    and any later baseline over the same molecules reads it back.
+    """
+    from natural_compounds.mordred_store import mordred_matrix
+
+    return mordred_matrix(smiles)
 
 
 def clean(features: np.ndarray) -> np.ndarray:

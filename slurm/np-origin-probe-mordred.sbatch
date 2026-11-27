@@ -11,16 +11,19 @@
 # descriptors, so an encoder that beats Morgan bits but not Mordred descriptors
 # has demonstrated a descriptor effect and not a corpus effect.
 #
-# No GPU: the only arm here needs no checkpoint. Mordred over the 60,170
-# benchmark molecules is single-threaded in probe.py and measured at 98 ms per
-# molecule, so 1.6 hours; 3 hours of walltime is the margin. The ridge fits
-# after it are minutes. Scoring is deliberately NOT run here — the companion
-# job slurm/np-origin-probe-coconut.sbatch depends on this one and scores both.
+# No GPU: Mordred is RDKit on CPU and a GPU cannot help it. The descriptors are
+# computed over all of the job's cores by natural_compounds.mordred_store, in
+# shards that land on disk as they finish, so a timeout or a requeue resumes
+# where it stopped. A serial pass did not finish in three hours. The raw matrix
+# is kept under $NC_DATA_DIR/processed/benchmark_descriptors/ for any later
+# baseline over the same molecules.
+#
+# OMP threads are capped at 4 so the linear fits never oversubscribe the node.
 #SBATCH -J nc-np-probe-mordred
 #SBATCH -p mit_normal
-#SBATCH -c 4
+#SBATCH -c 16
 #SBATCH --mem=32G
-#SBATCH --time=03:00:00
+#SBATCH --time=06:00:00
 #SBATCH -o runs/slurm/%x-%j.out
 
 set -euo pipefail
@@ -30,7 +33,7 @@ export UV_CACHE_DIR="$HOME/.cache/uv"
 export NC_DATA_DIR="$HOME/orcd/scratch/natural-compounds-data"
 export UV_PROJECT_ENVIRONMENT="$PWD/.venv-train"
 PY="$UV_PROJECT_ENVIRONMENT/bin/python"
-export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
+export OMP_NUM_THREADS=4
 
 echo "== $(date '+%H:%M:%S') mordred arm, 3 tasks x 3 splits x 3 budgets"
 "$PY" scripts/probe.py \
@@ -39,4 +42,6 @@ echo "== $(date '+%H:%M:%S') mordred arm, 3 tasks x 3 splits x 3 budgets"
     --split-seed 0 --split-seed 1 --split-seed 2 \
     --label-count 100 --label-count 500 --label-count 1000 \
     --out runs/probe_np --clip-features --budget-validation
-echo "== $(date '+%H:%M:%S') done, not scored here"
+echo "== $(date '+%H:%M:%S') scoring all of runs/probe_np"
+"$PY" scripts/evaluate.py runs/probe_np
+echo "== $(date '+%H:%M:%S') done"
