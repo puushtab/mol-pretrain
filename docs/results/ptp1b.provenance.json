@@ -1,0 +1,148 @@
+{
+  "dataset": "ptp1b",
+  "retrieved": "2026-11-27",
+  "target": {
+    "name_as_published": "Protein-tyrosine phosphatase 1B",
+    "npass_target_id": "NPT178",
+    "uniprot_id": "P18031",
+    "organism": "Homo sapiens (tax 9606)",
+    "confirmed_via": "NPASS v2.0 and NPASS 3.0 target tables both map NPT178 -> 'Protein-tyrosine phosphatase 1B', Homo sapiens 9606, UniProt P18031"
+  },
+  "source_url": {
+    "structures_and_nafm_label": "https://ndownloader.figshare.com/files/54346484",
+    "structures_doi": "https://doi.org/10.6084/m9.figshare.28980254.v1",
+    "nafm_code": "https://github.com/TomAIDD/NaFM-Official",
+    "npass_activities": "https://bidd.group/NPASS/downloadFiles/NPASSv2.0_download_naturalProducts_activities.txt",
+    "npass_target_v2": "https://bidd.group/NPASS/downloadFiles/NPASSv2.0_download_naturalProducts_targetInfo.txt",
+    "npass_target_v3": "https://bidd.group/NPASS/downloadFiles/NPASS3.0_target.txt"
+  },
+  "source_sha256": {
+    "regression_data.csv": "bdcd122f5455334288d1bcd3e4af04a4c8f47f79d2857c131042f7ebe9e995a1",
+    "npass_v2_NPT178_activities.tsv (filtered from the 90,364,982-byte activities file)": "37035a9cffa9909563c461e67aadd56a954cfa5b8cda7e57cab0194291bd0e9a"
+  },
+  "source_md5": {
+    "regression_data.csv": "c58a59afc8dd2111109eed7f23550a3a (matches Figshare computed_md5)"
+  },
+  "target_column": "pic50",
+  "units": "pIC50 = -log10(IC50 in mol/L); higher = more potent",
+  "assay_types_kept": [
+    "IC50"
+  ],
+  "assay_types_rejected": {
+    "Inhibition": 401,
+    "K": 8,
+    "Activity": 26,
+    "T1/2": 1,
+    "Kd": 8,
+    "Ki": 43,
+    "Km": 12,
+    "Vmax": 10,
+    "Kis": 3,
+    "kinact": 1,
+    "Ratio": 3,
+    "Ratio IC50": 1,
+    "Ratio Ki": 3,
+    "Imax": 1,
+    "Ka": 2,
+    "Kiuc": 1
+  },
+  "relation_mix_before_filtering": {
+    "=": 655,
+    ">": 109,
+    ">=": 7,
+    "<": 22
+  },
+  "censoring": {
+    "policy": "dropped; censored records were NOT converted to a point value",
+    "records_dropped": 138
+  },
+  "unit_mix_of_exact_ic50_records": {
+    "ug.mL-1": 27,
+    "nM": 628
+  },
+  "steps": [
+    [
+      "NaFM regression_data.csv rows, all targets",
+      4928
+    ],
+    [
+      "rows with target_id == NPT178 (PTP1B)",
+      612
+    ],
+    [
+      "distinct np_id in those rows",
+      612
+    ],
+    [
+      "NPASS v2.0 activity records for NPT178, all assay types",
+      1322
+    ],
+    [
+      "after keeping activity_type == 'IC50' only",
+      798
+    ],
+    [
+      "IC50 records whose np_id has a NaFM structure",
+      793
+    ],
+    [
+      "after dropping censored relations (>, >=, <)",
+      655
+    ],
+    [
+      "after dropping records whose units are not nM/uM (ug.mL-1 needs a MW assumption)",
+      628
+    ],
+    [
+      "records dropped, non-positive or non-numeric value",
+      0
+    ],
+    [
+      "distinct np_id with at least one usable IC50",
+      461
+    ],
+    [
+      "np_id with >1 usable IC50, collapsed by median",
+      42
+    ],
+    [
+      "dropped, SMILES unparseable by RDKit",
+      0
+    ],
+    [
+      "distinct canonical structures",
+      460
+    ],
+    [
+      "canonical structures carrying >1 np_id, collapsed by median",
+      1
+    ],
+    [
+      "FINAL rows written, one per unique molecule",
+      460
+    ]
+  ],
+  "label_stats": {
+    "n": 460,
+    "min": 2.2596,
+    "median": 4.9491,
+    "max": 9.4659,
+    "mean": 4.959,
+    "stdev": 0.6476
+  },
+  "nafm_label_column_audit": {
+    "finding": "NaFM's own activity_value for NPT178 was reproduced exactly (612/612, tol 1e-6) as log10(arithmetic mean of the raw numeric NPASS IC50 activity_value). It is therefore log10(IC50/nM), i.e. the INVERSE direction of a pIC50, it pools units, and it treats censored records as exact.",
+    "nafm_rows": 612,
+    "nafm_compounds_touched_by_non_nM_unit_record": 32,
+    "nafm_compounds_touched_by_censored_record": 134,
+    "nafm_value_range": [
+      -0.1972,
+      6.7404
+    ]
+  },
+  "built_with": {
+    "rdkit": "2024.09.6",
+    "python": "3.12.15"
+  },
+  "sha256": "9635446a815e1c674de24096174c17ab3e60855a335930cfaf2e9cb054b71992"
+}

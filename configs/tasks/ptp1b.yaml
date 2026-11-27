@@ -1,0 +1,64 @@
+# PTP1B (protein-tyrosine phosphatase 1B) inhibition, 460 natural products.
+# Regression on pIC50. Measured, not predicted.
+#
+# Target identity is confirmed, not inferred. The NaFM release labels this
+# target only as `NPT178`; the NPASS v2.0 and NPASS 3.0 target tables both map
+# NPT178 to "Protein-tyrosine phosphatase 1B", Homo sapiens (tax 9606),
+# UniProt P18031. Those are the same ids, in both NPASS versions.
+#
+# --- UNITS. The label is pIC50 = -log10(IC50 in mol/L), higher = more potent.
+# It is NOT the number NaFM publishes. NaFM's own `activity_value` column was
+# reproduced exactly here, 612 of 612 rows to 1e-6, as
+#     log10(arithmetic mean of the raw numeric NPASS IC50 activity_value)
+# which is log10(IC50/nM): the inverse direction of a pIC50, and off by the
+# nine-decade nM-to-M offset. The label in this file was therefore recomputed
+# from the underlying NPASS records rather than taken from NaFM. Anything that
+# compares a number here against a number in the NaFM paper has to undo
+# pIC50 = 9 - log10(IC50/nM) first.
+#
+# --- ASSAY MIX. NPASS holds 1,322 activity records for NPT178, of four
+# grouped kinds: IC50 798, "Others" 473 (401 of those bare percent-inhibition),
+# Ki 43, Kd 8. Only activity_type == 'IC50' is kept. Ki, Kd, Km, Vmax and
+# percent-inhibition are dropped rather than pooled. NaFM kept IC50 only too,
+# so the assay filter here agrees with theirs; the units and the censoring do
+# not.
+#
+# --- CENSORING. 138 of the 793 IC50 records carrying a NaFM structure are
+# censored: 109 '>', 7 '>=', 22 '<'. They are DROPPED, not clamped and not
+# treated as point values. NaFM averaged them in as if exact, which is what
+# moves 134 of their 612 compounds. Dropping them is the main reason this file
+# is smaller than the paper's 612.
+#
+# --- UNIT CONTAMINATION. 34 exact IC50 records are in ug.mL-1, which cannot
+# be converted to molar without assuming a molecular weight, so they are
+# dropped. NaFM took their numeric value as if it were nM, which is wrong by
+# orders of magnitude for the 32 compounds involved.
+#
+# --- SIZE. 460 unique molecules, so a 0.8 scaffold train split is 368. That
+# is small, and it is the honest number: 612 is a sample count over 612 np_ids
+# whose labels are unusable as published, not a count of molecules with
+# consistent units. Expect this task to be underpowered.
+#
+# Replicate disagreement is real: 42 compounds had more than one usable IC50
+# and were collapsed by median, with a median spread of 0.26 log units but a
+# worst case of 4.0 log units (a 10,000-fold disagreement between literature
+# reports of the same compound). One canonical structure carried two np_ids
+# and was collapsed the same way.
+#
+# No tautomer standardisation was applied. 13 rows carry an amide written in
+# the imidic-acid (enol) tautomer and 7 rows have a non-zero net formal
+# charge, both inherited from the upstream structures.
+name: ptp1b
+source: data/processed/np_tasks/ptp1b.csv
+smiles_column: smiles
+target_columns: [pic50]
+task_type: regression
+metric: rmse
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+# Only three budgets, and no 500. The scaffold train split is 368 molecules,
+# so 500 does not exist and 1000 would be fiction. null is the full train
+# split, which is the largest budget this task can honestly offer.
+label_counts: [50, 100, null]

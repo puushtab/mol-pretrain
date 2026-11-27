@@ -32,6 +32,21 @@ if [ "$room" -le 0 ]; then
 fi
 
 names=$(squeue -u "$USER" -h -o "%j" 2>/dev/null || true)
+NC_DATA_DIR="${NC_DATA_DIR:-$HOME/orcd/scratch/natural-compounds-data}"
+
+# A line whose splits are not frozen yet is not ready: finetune.py would exit on
+# the missing seed file and burn a GPU allocation to do it. Leaving the line in
+# the list is how this script waits for a prep job without a Slurm dependency,
+# which it cannot express because the dependency would have to be written at
+# submission time and these lines are submitted over many calls.
+splits_ready() {
+    local config task
+    for config in $1; do
+        task=$(basename "$config" .yaml)
+        test -f "$NC_DATA_DIR/processed/splits/$task/seed9.json" || return 1
+    done
+    return 0
+}
 remaining="$PENDING.remaining"
 : > "$remaining"
 submitted=0
@@ -44,6 +59,10 @@ while IFS=$'\t' read -r name init out tasks; do
     fi
     # Never double-submit a name that is already queued or running.
     if printf '%s\n' "$names" | grep -qx "$name"; then
+        continue
+    fi
+    if ! splits_ready "$tasks"; then
+        printf '%s\t%s\t%s\t%s\n' "$name" "$init" "$out" "$tasks" >> "$remaining"
         continue
     fi
     # shellcheck disable=SC2086 — $tasks is a deliberate space-separated list.

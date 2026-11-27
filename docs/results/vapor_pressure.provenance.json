@@ -1,0 +1,114 @@
+{
+  "name": "vapor_pressure",
+  "date": "2026-11-27",
+  "source_url": "https://raw.githubusercontent.com/kmansouri/OPERA/master/OPERA_Data.zip",
+  "source_member": "VP_QR.sdf",
+  "source_description": "OPERA / EPA PHYSPROP curated experimental vapour-pressure set, the QSAR-ready endpoint file distributed in OPERA_Data.zip of github.com/kmansouri/OPERA. This is the experimental dataset behind Mansouri et al., J Cheminform (2018) 10:10, doi:10.1186/s13321-018-0263-1.",
+  "sha256_raw_download": "9dc5d6387201df0f66e9472b034aeaa09ef7a47f705b9b5f50d7c9af8a1aadc3",
+  "sha256_source_member": "b9b44baf7a619684c88f33607c380df32a2dd02f98626c63d156e7315e5f1e24",
+  "units": "log10(P / mmHg)",
+  "units_evidence": "OPERA README.md line 'VP (Log) in mmHg: Vapor Pressure experimental values between 15 and 30 deg C (majority at 25-20C)'. Cross-checked against VP_2.9_update.csv in the same archive, whose 'unit' column is 'mmHg' for all 3945 rows with values on the same log10 scale. No conversion was applied.",
+  "temperature_c": 25,
+  "temperature_evidence": "Per-record 'VP Temperature' field in VP_QR.sdf. Only rows reading exactly 25 were kept. No temperature conversion was performed: extrapolating a 20 C measurement to 25 C needs an enthalpy of vaporisation that this file does not carry.",
+  "experimental_only": "VP_QR.sdf is OPERA's experimental endpoint file. Every kept row carries a measured LogVP with a literature citation in 'VP Reference' and a measurement temperature. The file holds no prediction column and no predicted/experimental flag; OPERA's predicted values are distributed separately (OPERA_models.zip, the CompTox dashboard) and none were read here.",
+  "smiles_field": "Canonical_QSARr",
+  "smiles_note": "OPERA's QSAR-ready structure (desalted, neutralised), re-canonicalised by RDKit with isomericSmiles=True. Stereochemistry is retained as given; the OPERA field is largely stereo-free.",
+  "columns": [
+    "smiles",
+    "log10_vp_mmhg"
+  ],
+  "curation_steps": [
+    {
+      "step": "raw_sdf_records",
+      "rows": 2819,
+      "detail": "every record in VP_QR.sdf"
+    },
+    {
+      "step": "in_paper_split",
+      "rows": 2711,
+      "detail": "dropped 108 records with blank Tr_1_Tst_0 (all also blank temperature, VP Reference '?')"
+    },
+    {
+      "step": "with_named_reference",
+      "rows": 2711,
+      "detail": "393 distinct literature references; 0 rows without a named reference (kept: they still carry a documented temperature)"
+    },
+    {
+      "step": "temperature_25C",
+      "rows": 2368,
+      "detail": "kept only rows whose 'VP Temperature' is exactly 25; dropped 287@20C, 10@30C, 9@23C, 8@22C, 7@24C, 5@27C, 4@21C, 4@26C, 4@29C, 2@15C, 1@31C, 1@19C, 1@28C"
+    },
+    {
+      "step": "not_censored",
+      "rows": 2368,
+      "detail": "0 rows carry a '<', '>' or '~' qualifier in LogVP (none found; the field is a bare float throughout, OPERA resolved censoring upstream)"
+    },
+    {
+      "step": "numeric_label",
+      "rows": 2368,
+      "detail": "dropped 0 rows whose LogVP is not a float"
+    },
+    {
+      "step": "rdkit_parsed",
+      "rows": 2368,
+      "detail": "dropped 0 rows RDKit could not parse; examples: []"
+    },
+    {
+      "step": "unique_molecules",
+      "rows": 2368,
+      "detail": "no duplicate canonical SMILES"
+    }
+  ],
+  "integrity_checks": {
+    "rdkit_inchikey_vs_stored_mismatches": 2,
+    "multi_fragment_structures": 0,
+    "censored_values_found": 0
+  },
+  "label_stats": {
+    "n_rows": 2368,
+    "min": -13.677799318285587,
+    "median": -0.9585994186502509,
+    "max": 5.668200416560223,
+    "mean": -1.7484237040345156,
+    "stdev": 3.4793435876705847
+  },
+  "caveats": [
+    "Only 2368 of the paper's 2711 train/test records are at exactly 25 C. The OPERA VP endpoint mixes 15-30 C (README: 'majority at 25-20C'); the 343 rows at other temperatures were dropped rather than extrapolated, so this file is smaller than the ~2,716 structures the 2018 paper reports for the endpoint.",
+    "4 of 2368 SMILES carry any stereo marker. OPERA's QSAR-ready curation strips most stereochemistry, so a corpus overlap check on this task should use a connectivity key, not a stereo-aware one.",
+    "6 rows measured a salt or solvate while the structure is the desalted parent (Salt_Solvent_ID non-zero): 2,4-D, Dimethylamine salt (CNC), Monosodium methanearsonate ([Na+]), Dodine (CC(=O)O), Formetanate hydrochloride (Cl), (unnamed) (N(CC)(CC)CC), (unnamed) ([Pr+3]). These are kept, as OPERA kept them, but the label does not belong to the structure written beside it. 2,4-D and its dimethylamine salt share one QSAR-ready structure and their reported values differ by 4.9 log units; the acid fell out on temperature, so the salt's value is the one in this file.",
+    "2 rows where RDKit's InChIKey for Canonical_QSARr disagrees with the stored InChI Key_QSARr field, i.e. OPERA's own structure/identifier pair is inconsistent there. Left in place; the structure field was treated as authoritative.",
+    "No qualifier column exists in VP_QR.sdf, so censored measurements ('<', '>') cannot be identified from this file. LogVP is a bare float in every row. If PHYSPROP censored any of these upstream, that is invisible here."
+  ],
+  "salt_or_solvate_rows": [
+    {
+      "preferred_name": "2,4-D, Dimethylamine salt",
+      "salt_solvent": "CNC",
+      "log10_vp_mmhg": -8.999999999999998
+    },
+    {
+      "preferred_name": "Monosodium methanearsonate",
+      "salt_solvent": "[Na+]",
+      "log10_vp_mmhg": -7.12489994136741
+    },
+    {
+      "preferred_name": "Dodine",
+      "salt_solvent": "CC(=O)O",
+      "log10_vp_mmhg": -6.823900055141538
+    },
+    {
+      "preferred_name": "Formetanate hydrochloride",
+      "salt_solvent": "Cl",
+      "log10_vp_mmhg": -7.920800658725943
+    },
+    {
+      "preferred_name": "",
+      "salt_solvent": "N(CC)(CC)CC",
+      "log10_vp_mmhg": -1.429599513389384
+    },
+    {
+      "preferred_name": "",
+      "salt_solvent": "[Pr+3]",
+      "log10_vp_mmhg": -0.35649994851801226
+    }
+  ]
+}

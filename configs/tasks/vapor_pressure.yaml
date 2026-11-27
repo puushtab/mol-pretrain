@@ -1,0 +1,66 @@
+# OPERA / EPA PHYSPROP experimental vapour pressure. 2,368 molecules.
+#
+# Source: VP_QR.sdf inside OPERA_Data.zip of github.com/kmansouri/OPERA, the
+# QSAR-ready *experimental* endpoint file behind Mansouri et al., J Cheminform
+# (2018) 10:10 (doi:10.1186/s13321-018-0263-1). Downloaded 2026-11-27; the
+# archive sha256 and the per-step row counts are in
+# data/processed/np_tasks/vapor_pressure.provenance.json.
+#
+# Units: log10(P / mmHg). Not Pa. The OPERA README states "VP (Log) in mmHg"
+# for this endpoint, and VP_2.9_update.csv in the same archive carries an
+# explicit unit column reading mmHg for all 3,945 of its rows on the same log10
+# scale. No unit conversion was applied. Range in this file is -13.68 to +5.67,
+# median -0.96.
+#
+# Temperature: 25 C only. This is the one place the file disagrees with how the
+# endpoint is usually quoted. OPERA's VP set mixes measurements from 15 to 30 C
+# ("majority at 25-20C"), and each record carries its own `VP Temperature`.
+# Only rows reading exactly 25 were kept. The 343 rows at other temperatures
+# were dropped, not extrapolated: converting a 20 C measurement to 25 C needs an
+# enthalpy of vaporisation the file does not carry, and faking one would put
+# invented numbers in the labels. So this task is 2,368 molecules rather than the
+# ~2,716 the paper reports for the endpoint. If a later run wants the full set,
+# it is a different task with a temperature feature, not this one.
+#
+# Experimental only. VP_QR.sdf is the measured-value file: every kept row has a
+# literature citation in `VP Reference` (393 distinct compilations: Daubert &
+# Danner, Tomlin, Perry & Green, Boublik, ...) and a measurement temperature.
+# The file has no prediction column and no predicted/experimental flag; OPERA's
+# predicted values ship separately in OPERA_models.zip and on the CompTox
+# dashboard, and none of those were read. 108 further records in the SDF carry a
+# blank train/test flag, a blank temperature and a '?' reference; with no
+# documented conditions or source they were dropped before anything else, which
+# leaves the paper's own 2,711 train+test records as the starting point.
+#
+# Caveats a reader of the results needs:
+#   - Almost no stereochemistry. Only 4 of 2,368 SMILES carry any stereo marker,
+#     because OPERA's QSAR-ready curation strips it. Every corpus arm compared on
+#     this task must therefore be excluded on the *connectivity* key, exactly as
+#     Amendment 19(d) requires for np_origin.
+#   - 6 rows report a salt or solvate measurement against the desalted parent
+#     structure (2,4-D dimethylamine salt, monosodium methanearsonate, dodine,
+#     formetanate hydrochloride, two unnamed). Kept, as OPERA kept them, but the
+#     label does not strictly belong to the structure beside it.
+#   - Censoring cannot be audited. There is no qualifier column; LogVP is a bare
+#     float in every row. Nothing here reads '<' or '>', but if PHYSPROP censored
+#     any of these upstream it is invisible in this file.
+#   - 2 rows where RDKit's InChIKey for Canonical_QSARr disagrees with the stored
+#     InChI Key_QSARr. The structure field was treated as authoritative.
+#   - No duplicate molecules survived. Four InChIKey collisions exist in the full
+#     SDF (salt/parent pairs collapsing to one QSAR-ready structure), but in each
+#     case only one member is at 25 C, so no median had to be taken. The 2,368
+#     rows are 2,368 distinct canonical SMILES.
+name: vapor_pressure
+source: data/processed/np_tasks/vapor_pressure.csv
+smiles_column: smiles
+target_columns: [log10_vp_mmhg]
+task_type: regression
+metric: rmse
+split:
+  type: scaffold
+  fractions: [0.8, 0.1, 0.1]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+# 100/500/1000 to sit alongside np_origin's budgets, and null for the full set.
+# Nothing here has been screened for where the signal saturates, unlike the
+# np_origin curves in docs/np-task-selection.md section 3.
+label_counts: [100, 500, 1000, null]
