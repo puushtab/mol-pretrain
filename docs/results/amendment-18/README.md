@@ -163,3 +163,67 @@ Not checked, and stated as such:
   diversity move together in P1, as NP-likeness, property profile, exposure and
   proximity move together across the Stage D arms. P1 is the tightest contrast
   in the study, not a clean single-variable experiment.
+
+## Result, scored 28 November
+
+`scripts/amendment_18_arms.py` over 840 cells, 10 arms and references. Tables in
+`runs/finetune_a18/figures/a18_primary.csv`, figures beside it. ESOL RMSE, so
+**a negative difference means the minuend is better**; differences are raw and
+not sign-flipped. Five splits, three seeds per arm averaged inside a split
+first, 95% t-interval on the five split-level differences.
+
+| Contrast | Labels | Difference | 95% interval | p | Bonferroni over 4 |
+|---|---|---|---|---|---|
+| P1 nearest decile − benchmark-free | all | +0.0014 | [−0.0609, +0.0637] | 0.95 | [−0.0954, +0.0982] |
+| P1 nearest decile − benchmark-free | 500 | −0.0094 | [−0.0541, +0.0354] | 0.59 | [−0.0789, +0.0602] |
+| P2 benchmark-free − Stage D mean | all | −0.0232 | [−0.0516, +0.0052] | 0.086 | [−0.0673, +0.0209] |
+| P2 benchmark-free − Stage D mean | 500 | **−0.0277** | **[−0.0485, −0.0068]** | **0.021** | [−0.0601, +0.0047] |
+
+**One of four registered intervals excludes zero. None survives the Bonferroni
+correction the amendment registered over the family of four.**
+
+### Proximity to the benchmark explains nothing
+
+P1 is the clean contrast — both arms are PubChem draws standardised against the
+same PubChem reference — and it is flat at both budgets. The interval at full
+labels spans ±0.06 RMSE around a difference of +0.0014. Taking the decile of
+PubChem nearest the benchmark molecules, holding the library fixed, buys
+nothing measurable.
+
+This matters more than it did a day ago. The `pubchem_nearbench` arm was
+cancelled from the new-benchmark campaign on 27 November, which left "chemistry
+resembling the test set helps" untested *there*. It is tested here, on ESOL,
+and the answer is no. That does not transfer automatically to vapour pressure
+and PTP1B, but it is no longer an entirely open alternative explanation.
+
+### The library contrast points at PubChem, and the known confound points the same way
+
+P2 is negative at both budgets and nominally significant at 500 labels: the
+exclusion-matched PubChem arm beats the mean of the three Stage D arms
+(`coconut_noleak`, `zinc_general_noleak`, `zinc_nplike_noleak`) by 0.028 RMSE,
+with all five splits agreeing in direction.
+
+It should not be read as a library effect, for two reasons stated before the
+data were scored. First, it does not survive the registered correction over the
+family of four. Second, and more seriously, **the confound recorded above
+predicts exactly this sign**: descriptor standardisation is against
+`pubchem_n100000_s0`, so P2's minuend is matched to the standardisation
+reference and its subtrahend is not, and a PubChem arm may be favoured on the
+pretraining objective for reasons having nothing to do with the library. The
+one interval that moved is the one where a known artefact would move it, in the
+direction that artefact predicts. That is weak evidence, not strong evidence.
+
+Note also that the Stage D mean averages over an exposed arm and two ZINC arms,
+so it is a mean over corpora that differ among themselves in NP-likeness,
+property profile and benchmark exposure at once.
+
+### How this sits with the new benchmarks
+
+Both results point the same way: no corpus composition effect that clears its
+own error bars. On ESOL the one contrast that moves is the one a known artefact
+would move. On vapour pressure and PTP1B nothing beats Chemprop given the
+Mordred descriptors at any budget. The place composition still looks like it
+matters is biological origin, where pretraining beats the descriptor baseline by
+about two AUROC points at 500 labels and above — but there PubChem, the
+benchmark-free natural-product draws and both ZINC arms all gain alike, which is
+a pretraining effect rather than a composition effect.
