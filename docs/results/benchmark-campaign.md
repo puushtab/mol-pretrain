@@ -263,13 +263,30 @@ comparison, in ZINC's disfavour.
 
 ## What is launched
 
+State as of 27 November, 23:55.
+
 | Campaign | Arms × tasks | Output | State |
 |---|---|---|---|
-| Origin, first eight arms | 11 × 3 | `runs/finetune_a19/` | finished, 1,320 cells |
-| Origin, the other 26 encoders | 26 × 3 | `runs/finetune_a19/` | running, ~60 jobs queued |
-| COCONUT seeds 1 and 2 | 3 pretrainings | `runs/pretrain/` | running, ~8 h each |
-| New benchmarks, every arm | 39 × 2 | `runs/finetune_bench/` | queued behind splits |
-| Splits + descriptors for the new benchmarks | — | scratch | queued |
+| Origin | 29 arms × 3 | `runs/finetune_a19/` | 29 arms complete at 120 cells each, 3,572 cells |
+| Origin, remaining arms | 4 arms × 3 | `runs/finetune_a19/` | in flight: `coconut_noleakskel_n25000_s1`/`s2`, `pubchem_noleak_n25000_s1`/`s2` |
+| COCONUT seeds 1 and 2 | 3 pretrainings | `runs/pretrain/` | **finished**; all three clean draws now exist |
+| New benchmarks, every arm | 23 arms × 2 | `runs/finetune_bench/` | all submitted, none has reached a GPU yet, 0 cells |
+| Splits + descriptors for the new benchmarks | — | scratch | splits frozen; descriptors fall back to `finetune.py`'s serial path |
+
+**Arms removed on 27 November, to stay inside the GPU quota.** Sixteen
+submissions were cancelled while still pending, on the instruction to cut
+anything not answering the three benchmarks: `pubchem_nearbench_noleak_n25000`
+(all three draws, both campaigns), `coconut_noleakskel_n5000` (both campaigns),
+`pubchem_noleak_n100000`, and `coconut_noleak_n25000` on the two new benchmarks
+only. The lines are preserved verbatim in `runs/slurm/removed-2026-11-27.txt`
+and can be resubmitted from there.
+
+Two consequences a reader must carry. **Proximity is no longer measured on these
+benchmarks:** `pubchem_nearbench` was the arm that would have separated "natural
+products help" from "chemistry resembling the test set helps", so that
+alternative explanation is now open and untested rather than ruled out. And
+**composition is tested at one corpus size only**, 25,000, since the 5,000-molecule
+natural-product arm is gone from the origin campaign's remaining work.
 
 **A practical constraint worth recording:** `mit_normal_gpu` accepts at most 64
 submitted jobs per user. The first full submission died partway through with
