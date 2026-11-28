@@ -263,15 +263,31 @@ comparison, in ZINC's disfavour.
 
 ## What is launched
 
-State as of 27 November, 23:55.
+State as of 28 November, 02:40. **The campaign has drained; nothing is queued.**
 
 | Campaign | Arms × tasks | Output | State |
 |---|---|---|---|
-| Origin | 29 arms × 3 | `runs/finetune_a19/` | 29 arms complete at 120 cells each, 3,572 cells |
-| Origin, remaining arms | 4 arms × 3 | `runs/finetune_a19/` | in flight: `coconut_noleakskel_n25000_s1`/`s2`, `pubchem_noleak_n25000_s1`/`s2` |
-| COCONUT seeds 1 and 2 | 3 pretrainings | `runs/pretrain/` | **finished**; all three clean draws now exist |
-| New benchmarks, every arm | 23 arms × 2 | `runs/finetune_bench/` | all submitted, none has reached a GPU yet, 0 cells |
-| Splits + descriptors for the new benchmarks | — | scratch | splits frozen; descriptors fall back to `finetune.py`'s serial path |
+| Origin | 35 arms × 3 | `runs/finetune_a19/` | complete, 4,200 cells scored |
+| COCONUT seeds 1 and 2 | 3 pretrainings | `runs/pretrain/` | **finished**; all three clean draws exist |
+| New benchmarks, every arm | 30 arms × 2 | `runs/finetune_bench/` | **complete, 2,100/2,100 cells**, every arm `COMPLETED`, none failed |
+| Splits + descriptors for the new benchmarks | — | scratch | splits frozen; descriptors cached by `scripts/precompute_task_descriptors.py` |
+
+The 30 new-benchmark arms ran between 00:16 and 02:35 on 28 November. Each is
+70 cells: vapour pressure at 4 budgets and PTP1B at 3, ten frozen splits each.
+A single arm takes about three minutes of GPU time, so the campaign was never
+compute-bound — it was bound by waiting in a queue thirty separate times.
+
+**How the GPU ceiling was raised.** `mit_normal_gpu` caps one user at
+`gres/gpu=2`, which no amount of submitting can exceed. `mit_preemptable` is a
+separate budget of `gres/gpu=4`, so the two together hold six. The new-benchmark
+work was moved there with `--requeue`, which is safe because `finetune.py` skips
+a cell whose `predictions.csv` already exists and `identity_mismatch()` verifies
+the manifest before trusting that skip. One trap: a site submit plugin rewrites
+a generic `--gres=gpu:1` to `gpu:l40s:1`, so every job queued for one GPU model
+while a100/h100/h200 capacity sat idle; explicit types *are* honoured, and the
+arms were spread round-robin across all four. `slurm/finetune-tasks-anygpu.sbatch`
+is that variant, kept separate so the shared sbatch other jobs depended on was
+never edited mid-flight.
 
 **Arms removed on 27 November, to stay inside the GPU quota.** Sixteen
 submissions were cancelled while still pending, on the instruction to cut
@@ -295,6 +311,95 @@ stderr. Two fixes: `slurm/finetune-tasks.sbatch` packs every task of one encoder
 into a single job, and `slurm/topup-gpu.sh` feeds a work list in as slots free,
 skipping any line whose splits are not frozen yet. Job ids accumulate in
 `runs/slurm/a19-jobs.txt`.
+
+## First result on the two new benchmarks
+
+Scored 28 November from 2,100 cells with
+`scripts/evaluate.py runs/finetune_bench --baseline chemprop_descriptors --baseline scratch`.
+The figure is `docs/figures/benchmark_panel.png`.
+
+**No encoder beats Chemprop handed the Mordred descriptors, on either new
+benchmark, at any label budget.** Not one of the 29 non-reference arms has a
+paired 95 percent interval clearing zero. This is the comparison that matters:
+CheMeleon pretrains by regressing those same 1,613 descriptors, so an encoder
+that beats a fingerprint but not a model given the descriptors directly has
+shown a descriptor effect and not a corpus effect.
+
+The best arm in each block, as a paired difference against
+`chemprop_descriptors` over ten splits, negated so that positive means better:
+
+| Task | Labels | Best arm | Difference | 95% half-width |
+|---|---|---|---|---|
+| PTP1B | 50 | `pubchem_noleak_n25000_s2` | +0.0511 | 0.0520 |
+| PTP1B | 100 | `zinc_nplike_noleak_n25000_s2` | +0.0139 | 0.0332 |
+| PTP1B | all | `pubchem_n50000_s0` | +0.0502 | 0.0610 |
+| Vapour pressure | 100 | `chemprop` | −0.1867 | 0.2634 |
+| Vapour pressure | 500 | `released` | +0.0175 | 0.1149 |
+| Vapour pressure | 1,000 | `released` | +0.0307 | 0.1337 |
+| Vapour pressure | all | `pubchem_n100000_s0` | −0.0298 | 0.1536 |
+
+Two things are worth saying plainly. On vapour pressure the descriptor baseline
+is simply the strongest thing in the campaign — most arms sit left of zero, and
+the best of them only reaches a tie. And on PTP1B the arms that come closest are
+PubChem and ZINC draws, **not** the natural-product corpus, which is the opposite
+of what a natural-product-corpus advantage would look like.
+
+Contrast this with the origin row of the same figure, where pretrained encoders
+*do* beat the descriptor baseline by roughly two AUROC points at 500 labels and
+above — consistently, across PubChem, the benchmark-free COCONUT draws and both
+ZINC arms alike. Pretraining helps there. It does not transfer to these two.
+
+### The noise floor, and one budget that fails it
+
+`scripts/benchmark_noise_floor.py` takes `pubchem_n25000_s0` minus
+`pubchem_n25000_s1` — two draws of one corpus at one size, paired on task,
+split and budget. No corpus effect can live in that difference, so its spread is
+the null distribution of a corpus contrast in this design, and its 95 percent
+half-width is the smallest effect the design can tell from a redraw.
+
+| Task | Labels | Floor mean | sd | Half-width | Floor itself nonzero? |
+|---|---|---|---|---|---|
+| PTP1B | 50 | +0.0040 | 0.0154 | 0.0110 | no |
+| PTP1B | 100 | +0.0119 | 0.0341 | 0.0244 | no |
+| PTP1B | all | −0.0055 | 0.0224 | 0.0160 | no |
+| Vapour pressure | 100 | **+0.1466** | 0.1692 | **0.1210** | **yes** |
+| Vapour pressure | 500 | +0.0121 | 0.1133 | 0.0810 | no |
+| Vapour pressure | 1,000 | +0.0337 | 0.0948 | 0.0678 | no |
+| Vapour pressure | all | +0.0415 | 0.0652 | 0.0467 | no |
+
+**Vapour pressure at 100 labels does not pass its own sanity check.** Two draws
+of the same corpus differ there by more than their interval allows. Since the
+only thing separating those two encoders is the random draw of pretraining
+molecules, that gap cannot be a corpus effect — it says the 100-label vapour
+pressure cell is noisy enough to manufacture an apparently significant
+difference out of nothing. **Nothing at that budget should be interpreted, in
+either direction**, including the negative results above. The likely cause is
+the split problem already recorded below: acyclic molecules all share the empty
+Murcko scaffold, so the vapour pressure splits are lumpier than intended, and
+the effect is worst where the training set is smallest.
+
+The other six task-and-budget blocks pass. Their floors are small relative to
+the contrasts in the table above, so the finding that nothing beats the
+descriptors is a real null at those budgets and not a failure to measure.
+
+### Two bugs fixed in the figure, both silent
+
+`plot_benchmark_panel.py` joined arm against reference on `label_count`, and
+polars does not match null to null unless asked. The all-labels budget *is* a
+null `label_count`, so every `nall` cell failed to pair and both all-labels
+panels drew themselves empty — which this figure's own caption tells the reader
+means "not yet run". A dropped result looked exactly like a missing one. The
+join now passes `nulls_equal=True`.
+
+The same loader also crashed outright when the two campaigns' CSVs disagreed on
+whether a column was `Int64` or `Float64`, which happens whenever one file has a
+null in a column the other has filled. Every integer column is now widened to
+`Float64` before concatenation.
+
+The `runs/finetune_a19/results_per_run.csv` in the repository was also stale —
+1,320 rows against 4,201 cells on disk — so the origin row of any figure drawn
+before 28 November predates ZINC, `released`, `scratch` and the Morgan forest.
+It has been rescored to 4,200 rows.
 
 ## Issues a reader must carry
 

@@ -114,7 +114,19 @@ def load() -> pl.DataFrame:
     for directory in RUN_DIRS:
         path = directory / "results_per_run.csv"
         if path.exists():
-            frames.append(pl.read_csv(path, infer_schema_length=10000))
+            frame = pl.read_csv(path, infer_schema_length=10000)
+            # One campaign's file can type a column Int64 where another types it
+            # Float64, purely because the second has a null somewhere in it: `nall`
+            # leaves label_count empty, and a baseline arm leaves pretrain_seed empty.
+            # Diagonal concat refuses to stack the two. Widening every integer column
+            # to Float64 makes the schemas meet, and these magnitudes are exact in a
+            # double, so no seed or budget is altered by the cast.
+            frame = frame.with_columns(
+                pl.col(name).cast(pl.Float64)
+                for name, dtype in frame.schema.items()
+                if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64)
+            )
+            frames.append(frame)
     if not frames:
         raise SystemExit(f"no results_per_run.csv under any of {[str(d) for d in RUN_DIRS]}")
     return pl.concat(frames, how="diagonal")
@@ -145,8 +157,13 @@ def difference(
     budget_filter = (
         pl.col("label_count").is_null() if budget is None else pl.col("label_count") == budget
     )
+    # nulls_equal, because the all-labels budget IS a null label_count and polars
+    # will not match null to null by default. Without it every `nall` cell silently
+    # fails to pair and the panel draws itself empty -- which this figure's own
+    # caption reads as "not yet run". A dropped result must not look like a missing
+    # one, so the pairing is made explicit rather than left to the default.
     joined = (
-        arm_cells.join(reference, on=["task", "seed", "label_count"])
+        arm_cells.join(reference, on=["task", "seed", "label_count"], nulls_equal=True)
         .filter(budget_filter)
         .with_columns(((pl.col("v") - pl.col("ref")) * (scale if higher else -scale)).alias("d"))
     )
