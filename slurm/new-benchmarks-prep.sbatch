@@ -34,30 +34,11 @@ for task in "${TASKS[@]}"; do
 done
 
 echo "== $(date '+%H:%M:%S') descriptors for the chemprop_descriptors arm"
-$PY - "${TASKS[@]}" <<'PYTHON'
-import sys
-
-import numpy as np
-import pandas as pd
-
-from natural_compounds.config import load_config
-from natural_compounds.mordred_store import mordred_matrix
-from natural_compounds.paths import DATA_PROCESSED, resolve_source
-
-for task in sys.argv[1:]:
-    cfg = load_config(f"configs/tasks/{task}.yaml")
-    smiles = pd.read_csv(resolve_source(cfg["source"]))[cfg["smiles_column"]].astype(str).tolist()
-    out = DATA_PROCESSED / "task_descriptors" / f"{task}.npy"
-    if out.exists():
-        print(f"   {task}: already cached")
-        continue
-    # The same raw matrix finetune.py would have computed serially: no column
-    # dropped and nothing imputed, because finetune.py decides both on its own
-    # training rows.
-    matrix = mordred_matrix(smiles)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    np.save(out, matrix)
-    print(f"   {task}: {matrix.shape} -> {out}")
-PYTHON
+# A FILE, not a heredoc. mordred_matrix parallelises with multiprocessing, and a
+# spawned worker re-imports __main__ by path; a script on stdin has no path, so
+# every worker died on '<stdin>' and the orphans held the step in RUNNING until
+# walltime. That is what killed prep 30685487 (which then cancelled three
+# dependent pretrainings) and 30750835. Do not inline this back.
+$PY scripts/precompute_task_descriptors.py "${TASKS[@]}"
 
 echo "== $(date '+%H:%M:%S') done"
