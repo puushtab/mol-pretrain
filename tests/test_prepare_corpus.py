@@ -31,7 +31,12 @@ def workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(prepare_corpus, "resolve", lambda cfg: cfg["name"])
     monkeypatch.setattr(prepare_corpus, "apply_clean", lambda f, _: f)
     monkeypatch.setattr(prepare_corpus, "filter_np_like", lambda f, _, __: f)
-    monkeypatch.setattr(prepare_corpus, "benchmark_molecules", lambda _: {"CCO", "CCC"})
+    # Two parameters: Amendment 19 gave benchmark_molecules an `identity` argument
+    # so the connectivity key could strip stereochemistry from the benchmark side.
+    # A one-argument stub here fails with a TypeError raised inside prepare().
+    monkeypatch.setattr(
+        prepare_corpus, "benchmark_molecules", lambda _tasks, _identity="canonical": {"CCO", "CCC"}
+    )
     monkeypatch.setattr(prepare_corpus, "DATA_PROCESSED", tmp_path)
     return tmp_path / "corpora"
 
