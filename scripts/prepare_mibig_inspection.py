@@ -133,7 +133,11 @@ def extract(entries: list[dict]) -> dict:
     for entry in entries:
         accession = entry["accession"]
         classes = sorted(
-            {c["class"] for c in ((entry.get("biosynthesis") or {}).get("classes") or []) if c.get("class")}
+            {
+                c["class"]
+                for c in ((entry.get("biosynthesis") or {}).get("classes") or [])
+                if c.get("class")
+            }
         )
         subclasses = sorted(
             {
@@ -175,7 +179,9 @@ def extract(entries: list[dict]) -> dict:
             smiles = compound.get("structure")
             key = canonicalize(smiles) if smiles else None
             evidence = compound.get("evidence") or []
-            methods = sorted({e.get("method") for e in evidence if isinstance(e, dict) and e.get("method")})
+            methods = sorted(
+                {e.get("method") for e in evidence if isinstance(e, dict) and e.get("method")}
+            )
             compound_rows.append(
                 {
                     "bgc": accession,
@@ -279,14 +285,18 @@ def diagnose(tables: dict) -> dict:
             # many distinct structures carry the class under any of their BGCs.
             "triples_per_class": dict(Counter(t["klass"] for t in triples).most_common()),
             "distinct_structures_per_class": dict(
-                Counter(
-                    cls for s, cs in per_structure_classes.items() for cls in cs
-                ).most_common()
+                Counter(cls for s, cs in per_structure_classes.items() for cls in cs).most_common()
             ),
             "classes_per_active_entry": dict(
-                sorted(Counter(len(b["classes"].split("|")) if b["classes"] else 0 for b in active).items())
+                sorted(
+                    Counter(
+                        len(b["classes"].split("|")) if b["classes"] else 0 for b in active
+                    ).items()
+                )
             ),
-            "hybrid_active_entries": sum(1 for b in active if b["classes"] and len(b["classes"].split("|")) > 1),
+            "hybrid_active_entries": sum(
+                1 for b in active if b["classes"] and len(b["classes"].split("|")) > 1
+            ),
         },
         "structures": {
             "distinct_canonical_active_classed": len(per_structure_classes),
@@ -314,13 +324,21 @@ def diagnose(tables: dict) -> dict:
         },
         "attribution": {
             "contributing_bgcs": len(per_bgc_compounds),
-            "bgcs_contributing_more_than_one_structure": sum(1 for v in per_bgc_compounds.values() if v > 1),
-            "max_structures_from_one_bgc": max(per_bgc_compounds.values()) if per_bgc_compounds else 0,
+            "bgcs_contributing_more_than_one_structure": sum(
+                1 for v in per_bgc_compounds.values() if v > 1
+            ),
+            "max_structures_from_one_bgc": max(per_bgc_compounds.values())
+            if per_bgc_compounds
+            else 0,
         },
         "evidence": {
             "active_classed_compound_records": len(classed),
-            "with_structured_structure_evidence": sum(1 for c in classed if c["n_structure_evidence"]),
-            "without_structured_structure_evidence": sum(1 for c in classed if not c["n_structure_evidence"]),
+            "with_structured_structure_evidence": sum(
+                1 for c in classed if c["n_structure_evidence"]
+            ),
+            "without_structured_structure_evidence": sum(
+                1 for c in classed if not c["n_structure_evidence"]
+            ),
             "note": (
                 "An empty evidence list means no structured annotation in the file. "
                 "It is not a statement about the literature the entry cites. "
@@ -331,7 +349,9 @@ def diagnose(tables: dict) -> dict:
                     m for c in classed for m in c["structure_evidence_methods"].split("|") if m
                 ).most_common()
             ),
-            "active_entries_with_at_least_one_reference": sum(1 for b in active if b["n_references"]),
+            "active_entries_with_at_least_one_reference": sum(
+                1 for b in active if b["n_references"]
+            ),
         },
         "built_with": {"rdkit": rdkit.__version__},
     }
@@ -374,7 +394,9 @@ def main() -> None:
     print(f"  structures {s['distinct_canonical_active_classed']} distinct, active and classed")
     print(f"             {s['carrying_more_than_one_class']} carry more than one class")
     print(f"             {s['under_more_than_one_bgc']} sit under more than one BGC")
-    print(f"             {s['with_genuinely_different_class_sets_across_bgcs']} have genuinely different class sets")
+    print(
+        f"             {s['with_genuinely_different_class_sets_across_bgcs']} have genuinely different class sets"
+    )
 
     if args.check:
         print("  --check, nothing written")
